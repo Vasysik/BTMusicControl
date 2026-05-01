@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🎵 BT Music Control"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Выбери роль этого телефона"
+        android:textSize="14sp"
+        android:textColor="#888888"
+        android:layout_marginBottom="48dp"/>
+
+    <Button
+        android:id="@+id/btn_server"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🎵  Я СЕРВЕР (играет музыка)"
+        android:layout_marginBottom="16dp"/>
+
+    <Button
+        android:id="@+id/btn_client"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🎮  Я КЛИЕНТ (пульт управления)"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Сначала свяжи телефоны через стандартный Bluetooth в настройках Android"
+        android:textSize="12sp"
+        android:textColor="#AAAAAA"
+        android:gravity="center"
+        android:layout_marginTop="48dp"/>
+
+</LinearLayout>

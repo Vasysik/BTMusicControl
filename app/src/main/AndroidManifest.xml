@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.btmusic">
+
+    <!-- ═══ Bluetooth (до Android 12) ═══ -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30"/>
+
+    <!-- ═══ Bluetooth (Android 12+) ═══ -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"/>
+
+    <!-- Для dispatchMediaKeyEvent — управление плеером без рута -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+
+    <!-- Foreground Services -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+
+    <application
+        android:allowBackup="true"
+        android:label="BT Music Control"
+        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+
+        <!-- ═══ Главный экран ═══ -->
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".server.ServerActivity" android:exported="false"/>
+        <activity android:name=".client.ClientActivity" android:exported="false"/>
+
+        <!-- ═══ Server Foreground Service ═══ -->
+        <service
+            android:name=".server.BluetoothServerService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false"/>
+
+        <!-- ═══ Client Foreground Service ═══ -->
+        <service
+            android:name=".client.BluetoothClientService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false"/>
+
+        <!--
+            ═══ Notification Listener (опционально) ═══
+            Для передачи названия трека с сервера на клиент.
+            Рут НЕ нужен. Нужно разрешение вручную:
+            Настройки → Приложения → Спец. доступ → Доступ к уведомлениям
+        -->
+        <service
+            android:name=".server.MusicNotificationListener"
+            android:label="BT Music — доступ к уведомлениям"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
+
+        <!--
+            ═══ KeyMapper BroadcastReceiver ═══
+            Слушает broadcast-интенты от KeyMapper.
+            android:exported="true" обязателен — иначе внешние приложения
+            не смогут отправить нам broadcast.
+        -->
+        <receiver
+            android:name=".client.KeyMapperReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.mygadget.action.PLAY_PAUSE"/>
+                <action android:name="com.mygadget.action.NEXT_TRACK"/>
+                <action android:name="com.mygadget.action.PREV_TRACK"/>
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
