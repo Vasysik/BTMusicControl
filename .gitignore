@@ -3,6 +3,6 @@
 local.properties
 gradlew
 gradlew.bat
-app
+app/debug
 build
 gradle
