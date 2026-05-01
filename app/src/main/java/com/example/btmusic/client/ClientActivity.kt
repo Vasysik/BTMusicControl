@@ -6,6 +6,7 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -24,6 +25,8 @@ class ClientActivity : AppCompatActivity() {
     private lateinit var btnPrev: Button
     private lateinit var btnPlay: Button
     private lateinit var btnNext: Button
+    private lateinit var btnVolUp: Button
+    private lateinit var btnVolDown: Button
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -50,36 +53,38 @@ class ClientActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_client)
 
-        tvStatus     = findViewById(R.id.tv_status)
-        tvTrack      = findViewById(R.id.tv_track)
+        tvStatus      = findViewById(R.id.tv_status)
+        tvTrack       = findViewById(R.id.tv_track)
         tvSavedDevice = findViewById(R.id.tv_saved_device)
-        btnConnect   = findViewById(R.id.btn_connect)
-        btnForget    = findViewById(R.id.btn_forget)
-        btnPrev      = findViewById(R.id.btn_prev)
-        btnPlay      = findViewById(R.id.btn_play)
-        btnNext      = findViewById(R.id.btn_next)
-
-        setControlsEnabled(false)
-        refreshSavedDeviceUI()
+        btnConnect    = findViewById(R.id.btn_connect)
+        btnForget     = findViewById(R.id.btn_forget)
+        btnPrev       = findViewById(R.id.btn_prev)
+        btnPlay       = findViewById(R.id.btn_play)
+        btnNext       = findViewById(R.id.btn_next)
+        btnVolUp      = findViewById(R.id.btn_vol_up)
+        btnVolDown    = findViewById(R.id.btn_vol_down)
 
         btnConnect.setOnClickListener { requestBtPermsAndPick() }
 
         btnForget.setOnClickListener {
             Prefs(this).forget()
             stopService(Intent(this, BluetoothClientService::class.java))
-            refreshSavedDeviceUI()
             tvStatus.text = "❌ Нет соединения"
+            tvTrack.text  = ""
             setControlsEnabled(false)
+            refreshSavedDeviceUI()
         }
 
-        btnPrev.setOnClickListener { BluetoothClientService.instance?.sendCommand(Constants.CMD_PREV) }
-        btnPlay.setOnClickListener { BluetoothClientService.instance?.sendCommand(Constants.CMD_PLAY) }
-        btnNext.setOnClickListener { BluetoothClientService.instance?.sendCommand(Constants.CMD_NEXT) }
+        btnPrev.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_PREV) }
+        btnPlay.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_PLAY) }
+        btnNext.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_NEXT) }
+        btnVolUp.setOnClickListener  { BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_UP) }
+        btnVolDown.setOnClickListener{ BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_DOWN) }
     }
 
     override fun onResume() {
         super.onResume()
-        // FIX: на Android 13+ registerReceiver без флага бросает SecurityException
+
         val filter = IntentFilter().apply {
             addAction(Constants.ACTION_CONNECTION_CHANGED)
             addAction(Constants.ACTION_TRACK_UPDATED)
@@ -90,6 +95,10 @@ class ClientActivity : AppCompatActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(stateReceiver, filter)
         }
+
+        val connected = BluetoothClientService.instance?.isConnected ?: false
+        tvStatus.text = if (connected) "✅ Подключён" else "❌ Нет соединения"
+        setControlsEnabled(connected)
         refreshSavedDeviceUI()
     }
 
@@ -100,16 +109,16 @@ class ClientActivity : AppCompatActivity() {
 
     private fun refreshSavedDeviceUI() {
         val prefs = Prefs(this)
-        val name = prefs.savedDeviceName
-        val addr = prefs.savedDeviceAddress
+        val name  = prefs.savedDeviceName
+        val addr  = prefs.savedDeviceAddress
         if (addr != null) {
-            tvSavedDevice.text = "📱 Привязано: ${name ?: addr}"
-            btnForget.visibility = android.view.View.VISIBLE
-            btnConnect.text = "Сменить устройство"
+            tvSavedDevice.text   = "📱 Привязано: ${name ?: addr}"
+            btnForget.visibility = View.VISIBLE
+            btnConnect.text      = "Сменить устройство"
         } else {
-            tvSavedDevice.text = "Устройство не привязано"
-            btnForget.visibility = android.view.View.GONE
-            btnConnect.text = "Выбрать устройство"
+            tvSavedDevice.text   = "Устройство не привязано"
+            btnForget.visibility = View.GONE
+            btnConnect.text      = "Выбрать устройство"
         }
     }
 
@@ -134,15 +143,12 @@ class ClientActivity : AppCompatActivity() {
             Toast.makeText(this, "Включите Bluetooth", Toast.LENGTH_SHORT).show()
             return
         }
-
         val paired = adapter.bondedDevices.toList()
         if (paired.isEmpty()) {
             Toast.makeText(this, "Нет сопряжённых устройств. Сначала свяжите телефоны в настройках Bluetooth.", Toast.LENGTH_LONG).show()
             return
         }
-
         val labels = paired.map { "${it.name ?: "Unknown"} (${it.address})" }.toTypedArray()
-
         android.app.AlertDialog.Builder(this)
             .setTitle("Выберите сервер")
             .setItems(labels) { _, idx -> connectTo(paired[idx]) }
@@ -150,13 +156,11 @@ class ClientActivity : AppCompatActivity() {
     }
 
     private fun connectTo(device: BluetoothDevice) {
-        // Сохраняем устройство — при следующем запуске подключится автоматически
         Prefs(this).apply {
             savedDeviceAddress = device.address
             savedDeviceName    = device.name ?: device.address
         }
         refreshSavedDeviceUI()
-
         tvStatus.text = "⏳ Подключение к ${device.name}..."
         val intent = Intent(this, BluetoothClientService::class.java).apply {
             putExtra(Constants.EXTRA_DEVICE_ADDRESS, device.address)
@@ -165,8 +169,10 @@ class ClientActivity : AppCompatActivity() {
     }
 
     private fun setControlsEnabled(enabled: Boolean) {
-        btnPrev.isEnabled = enabled
-        btnPlay.isEnabled = enabled
-        btnNext.isEnabled = enabled
+        btnPrev.isEnabled    = enabled
+        btnPlay.isEnabled    = enabled
+        btnNext.isEnabled    = enabled
+        btnVolUp.isEnabled   = enabled
+        btnVolDown.isEnabled = enabled
     }
 }

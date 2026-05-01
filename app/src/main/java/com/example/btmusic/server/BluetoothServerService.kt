@@ -24,6 +24,9 @@ class BluetoothServerService : Service() {
     private var clientSocket: BluetoothSocket?       = null
     private var writer: PrintWriter?                 = null
 
+    @Volatile var isClientConnected: Boolean = false
+        private set
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var listenJob: Job? = null
 
@@ -45,10 +48,6 @@ class BluetoothServerService : Service() {
         closeAll()
     }
 
-    /**
-     * Открывает серверный сокет и ждёт клиента.
-     * После дисконнекта — автоматически перезапускается.
-     */
     private fun beginAccepting() {
         listenJob?.cancel()
         listenJob = scope.launch {
@@ -57,10 +56,8 @@ class BluetoothServerService : Service() {
                     Constants.BT_SERVER_NAME, Constants.BT_UUID
                 )
                 broadcastState(false)
-
                 val socket = serverSocket!!.accept()
                 handleClient(socket)
-
             } catch (e: IOException) {
                 if (isActive) {
                     broadcastState(false)
@@ -74,15 +71,12 @@ class BluetoothServerService : Service() {
     private suspend fun handleClient(socket: BluetoothSocket) {
         clientSocket = socket
         writer = PrintWriter(BufferedWriter(OutputStreamWriter(socket.outputStream)), true)
-
         val name = runCatching { socket.remoteDevice.name }.getOrDefault(socket.remoteDevice.address)
+        isClientConnected = true
         updateNotification("Подключён: $name")
         broadcastState(true)
-
-        // Серверный сокет закрываем — он больше не нужен пока есть клиент
         runCatching { serverSocket?.close() }
         serverSocket = null
-
         readLoop(socket)
     }
 
@@ -94,9 +88,9 @@ class BluetoothServerService : Service() {
                 dispatchCommand(line.trim())
             }
         } catch (_: IOException) {
-            // клиент отключился
         } finally {
             closeClient()
+            isClientConnected = false
             broadcastState(false)
             updateNotification("Ожидание клиента...")
             delay(500)
@@ -104,24 +98,28 @@ class BluetoothServerService : Service() {
         }
     }
 
-    /**
-     * Симулируем аппаратную медиа-кнопку через AudioManager.
-     * Работает с любым плеером (Spotify, YouTube Music, VK, etc.) без рута.
-     */
     private fun dispatchCommand(cmd: String) {
-        val keyCode = when (cmd) {
-            Constants.CMD_PLAY -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
-            Constants.CMD_NEXT -> KeyEvent.KEYCODE_MEDIA_NEXT
-            Constants.CMD_PREV -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
-            else -> return
-        }
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
-        // Пара DOWN + UP обязательна
-        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        when (cmd) {
+            Constants.CMD_PLAY -> {
+                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+            }
+            Constants.CMD_NEXT -> {
+                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
+                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_NEXT))
+            }
+            Constants.CMD_PREV -> {
+                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
+                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PREVIOUS))
+            }
+            Constants.CMD_VOL_UP ->
+                am.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+            Constants.CMD_VOL_DOWN ->
+                am.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+        }
     }
 
-    /** Вызывается из MusicNotificationListener */
     fun sendTrackInfo(info: String) {
         scope.launch {
             runCatching { writer?.println("${Constants.CMD_TRACK_PREFIX}$info") }
@@ -145,6 +143,28 @@ class BluetoothServerService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
+        ensureChannel()
+        val tapIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, ServerActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return Notification.Builder(this, Constants.NOTIF_CHANNEL_ID)
+            .setContentTitle("🎵 BT Music Server")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentIntent(tapIntent)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun updateNotification(text: String) =
+        getSystemService(NotificationManager::class.java)
+            .notify(Constants.NOTIF_ID_SERVER, buildNotification(text))
+
+    private fun ensureChannel() {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(Constants.NOTIF_CHANNEL_ID) == null) {
             nm.createNotificationChannel(
@@ -155,14 +175,5 @@ class BluetoothServerService : Service() {
                 )
             )
         }
-        return Notification.Builder(this, Constants.NOTIF_CHANNEL_ID)
-            .setContentTitle("BT Music Server")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .build()
     }
-
-    private fun updateNotification(text: String) =
-        getSystemService(NotificationManager::class.java)
-            .notify(Constants.NOTIF_ID_SERVER, buildNotification(text))
 }

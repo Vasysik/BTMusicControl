@@ -11,6 +11,8 @@ object Constants {
     const val CMD_PLAY         = "PLAY"
     const val CMD_NEXT         = "NEXT"
     const val CMD_PREV         = "PREV"
+    const val CMD_VOL_UP       = "VOL_UP"
+    const val CMD_VOL_DOWN     = "VOL_DOWN"
     const val CMD_TRACK_PREFIX = "TRACK:"
 
     // Интенты от KeyMapper → Client

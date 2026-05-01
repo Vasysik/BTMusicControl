@@ -54,7 +54,8 @@ class ServerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // FIX: на Android 13+ registerReceiver без флага бросает SecurityException
+
+        // FIX: на Android 13+ нужен флаг
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(
                 stateReceiver,
@@ -64,6 +65,25 @@ class ServerActivity : AppCompatActivity() {
         } else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(stateReceiver, IntentFilter(Constants.ACTION_CONNECTION_CHANGED))
+        }
+
+        // FIX: синхронизируем UI с реальным состоянием сервиса
+        // (флаг serviceRunning сбрасывается когда Activity пересоздаётся)
+        val svc = BluetoothServerService.instance
+        serviceRunning = svc != null
+        when {
+            svc == null -> {
+                btnToggle.text = "Запустить сервер"
+                tvStatus.text  = "Сервер остановлен"
+            }
+            svc.isClientConnected -> {
+                btnToggle.text = "Остановить сервер"
+                tvStatus.text  = "✅ Клиент подключён"
+            }
+            else -> {
+                btnToggle.text = "Остановить сервер"
+                tvStatus.text  = "⏳ Ожидание клиента..."
+            }
         }
     }
 

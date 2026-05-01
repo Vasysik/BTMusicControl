@@ -29,9 +29,9 @@
         android:text=""
         android:textSize="14sp"
         android:textStyle="italic"
-        android:textColor="#555555"
+        android:textColor="?android:attr/textColorSecondary"
         android:gravity="center"
-        android:layout_marginBottom="20dp"/>
+        android:layout_marginBottom="16dp"/>
 
     <!-- Привязанное устройство -->
     <TextView
@@ -40,7 +40,7 @@
         android:layout_height="wrap_content"
         android:text="Устройство не привязано"
         android:textSize="13sp"
-        android:textColor="#888888"
+        android:textColor="?android:attr/textColorSecondary"
         android:gravity="center"
         android:layout_marginBottom="8dp"/>
 
@@ -58,23 +58,23 @@
             android:text="Выбрать устройство"
             android:layout_marginEnd="8dp"/>
 
-        <!-- Кнопка "Забыть" — скрыта если нет сохранённого устройства -->
         <Button
             android:id="@+id/btn_forget"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="✕ Забыть"
             android:visibility="gone"
-            android:backgroundTint="#FFCCCC"/>
+            android:backgroundTint="#CC3333"/>
 
     </LinearLayout>
 
-    <!-- Кнопки управления -->
+    <!-- Управление воспроизведением -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center">
+        android:gravity="center"
+        android:layout_marginBottom="20dp">
 
         <Button
             android:id="@+id/btn_prev"
@@ -100,12 +100,43 @@
 
     </LinearLayout>
 
+    <!-- Громкость -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <Button
+            android:id="@+id/btn_vol_down"
+            android:layout_width="80dp"
+            android:layout_height="64dp"
+            android:text="🔉"
+            android:textSize="26sp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Громкость"
+            android:textSize="12sp"
+            android:textColor="?android:attr/textColorSecondary"
+            android:layout_marginHorizontal="16dp"/>
+
+        <Button
+            android:id="@+id/btn_vol_up"
+            android:layout_width="80dp"
+            android:layout_height="64dp"
+            android:text="🔊"
+            android:textSize="26sp"/>
+
+    </LinearLayout>
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Кнопки также управляются через KeyMapper"
+        android:text="Управление также через KeyMapper"
         android:textSize="11sp"
-        android:textColor="#AAAAAA"
-        android:layout_marginTop="32dp"/>
+        android:textColor="?android:attr/textColorHint"
+        android:layout_marginTop="24dp"/>
 
 </LinearLayout>
