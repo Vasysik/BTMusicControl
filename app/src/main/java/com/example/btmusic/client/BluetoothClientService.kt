@@ -5,6 +5,7 @@ import android.bluetooth.*
 import android.content.Intent
 import android.os.*
 import com.example.btmusic.common.Constants
+import com.example.btmusic.common.Prefs
 import kotlinx.coroutines.*
 import java.io.*
 
@@ -29,15 +30,32 @@ class BluetoothClientService : Service() {
         super.onCreate()
         instance = this
         startForeground(Constants.NOTIF_ID_CLIENT, buildNotification("Инициализация..."))
+
+        // Автоподключение к сохранённому устройству
+        val savedAddress = Prefs(this).savedDeviceAddress
+        if (savedAddress != null) {
+            targetAddress = savedAddress
+            connectTo(savedAddress)
+        } else {
+            // Нет привязанного устройства — останавливаемся немедленно, батарею не тратим
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val address = intent?.getStringExtra(Constants.EXTRA_DEVICE_ADDRESS)
-        if (address != null && address != targetAddress) {
-            targetAddress = address
-            connectTo(address)
+            ?: Prefs(this).savedDeviceAddress
+
+        return if (address != null) {
+            if (address != targetAddress) {
+                targetAddress = address
+                connectTo(address)
+            }
+            START_STICKY   // перезапуск системой — продолжаем работать
+        } else {
+            stopSelf()
+            START_NOT_STICKY  // нет устройства — не перезапускаться
         }
-        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -55,38 +73,41 @@ class BluetoothClientService : Service() {
             broadcastState(false)
             updateNotification("Подключение...")
 
+            var retryDelay = 3_000L  // экспоненциальная задержка: 3s, 6s, 12s ... max 60s
+
             while (isActive) {
                 try {
                     val device = btAdapter.getRemoteDevice(address)
 
                     val btSocket = try {
-                        // Стандартный способ
                         device.createRfcommSocketToServiceRecord(Constants.BT_UUID)
                     } catch (e: Exception) {
-                        // Fallback для нестандартных Bluetooth-стеков (японские телефоны и т.п.)
+                        // Fallback для нестандартных Bluetooth-стеков
                         device.javaClass
                             .getMethod("createRfcommSocket", Int::class.java)
                             .invoke(device, 1) as BluetoothSocket
                     }
 
-                    // Критично! Без этого connect() нестабилен
+                    // Без этого connect() нестабилен при активном сканировании
                     btAdapter.cancelDiscovery()
 
                     btSocket.connect()
                     socket = btSocket
                     writer = PrintWriter(BufferedWriter(OutputStreamWriter(btSocket.outputStream)), true)
 
+                    retryDelay = 3_000L  // успешно — сбрасываем задержку
                     val name = runCatching { device.name }.getOrDefault(address)
                     updateNotification("Подключён: $name")
                     broadcastState(true)
 
-                    readLoop(btSocket)
+                    readLoop(btSocket)  // блокируем до дисконнекта
 
                 } catch (e: IOException) {
                     closeSocket()
                     broadcastState(false)
-                    updateNotification("Переподключение...")
-                    delay(3_000)
+                    updateNotification("Переподключение через ${retryDelay / 1000}с...")
+                    delay(retryDelay)
+                    retryDelay = minOf(retryDelay * 2, 60_000L)  // не чаще раза в минуту
                 }
             }
         }

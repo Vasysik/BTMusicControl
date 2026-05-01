@@ -20,7 +20,7 @@
         android:layout_height="wrap_content"
         android:text="❌ Нет соединения"
         android:textSize="18sp"
-        android:layout_marginBottom="8dp"/>
+        android:layout_marginBottom="4dp"/>
 
     <TextView
         android:id="@+id/tv_track"
@@ -31,14 +31,43 @@
         android:textStyle="italic"
         android:textColor="#555555"
         android:gravity="center"
-        android:layout_marginBottom="32dp"/>
+        android:layout_marginBottom="20dp"/>
 
-    <Button
-        android:id="@+id/btn_connect"
+    <!-- Привязанное устройство -->
+    <TextView
+        android:id="@+id/tv_saved_device"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Подключиться к серверу"
-        android:layout_marginBottom="48dp"/>
+        android:text="Устройство не привязано"
+        android:textSize="13sp"
+        android:textColor="#888888"
+        android:gravity="center"
+        android:layout_marginBottom="8dp"/>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginBottom="32dp">
+
+        <Button
+            android:id="@+id/btn_connect"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Выбрать устройство"
+            android:layout_marginEnd="8dp"/>
+
+        <!-- Кнопка "Забыть" — скрыта если нет сохранённого устройства -->
+        <Button
+            android:id="@+id/btn_forget"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="✕ Забыть"
+            android:visibility="gone"
+            android:backgroundTint="#FFCCCC"/>
+
+    </LinearLayout>
 
     <!-- Кнопки управления -->
     <LinearLayout

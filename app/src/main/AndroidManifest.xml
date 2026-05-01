@@ -13,6 +13,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"/>
 
+    <!-- Уведомления (Android 13+) — нужно для Foreground Service -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
     <!-- Для dispatchMediaKeyEvent — управление плеером без рута -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
 

@@ -54,7 +54,17 @@ class ServerActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        registerReceiver(stateReceiver, IntentFilter(Constants.ACTION_CONNECTION_CHANGED))
+        // FIX: на Android 13+ registerReceiver без флага бросает SecurityException
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(
+                stateReceiver,
+                IntentFilter(Constants.ACTION_CONNECTION_CHANGED),
+                RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(stateReceiver, IntentFilter(Constants.ACTION_CONNECTION_CHANGED))
+        }
     }
 
     override fun onPause() {
@@ -73,7 +83,6 @@ class ServerActivity : AppCompatActivity() {
             if (needed.isEmpty()) startServer()
             else btPermissionLauncher.launch(needed.toTypedArray())
         } else {
-            // Android 8–11: разрешения выдаются автоматически при установке
             startServer()
         }
     }
