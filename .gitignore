@@ -4,5 +4,6 @@ local.properties
 gradlew
 gradlew.bat
 app/debug
+app/release
 build
 gradle
