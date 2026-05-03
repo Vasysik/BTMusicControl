@@ -3,9 +3,11 @@ package com.example.btmusic.server
 import android.app.*
 import android.bluetooth.*
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.media.AudioManager
 import android.os.*
 import android.view.KeyEvent
+import com.example.btmusic.R
 import com.example.btmusic.common.Constants
 import kotlinx.coroutines.*
 import java.io.*
@@ -26,6 +28,8 @@ class BluetoothServerService : Service() {
 
     @Volatile var isClientConnected: Boolean = false
         private set
+    @Volatile var connectedClientName: String = ""
+        private set
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var listenJob: Job? = null
@@ -33,7 +37,7 @@ class BluetoothServerService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        startForeground(Constants.NOTIF_ID_SERVER, buildNotification("Ожидание клиента..."))
+        startForeground(Constants.NOTIF_ID_SERVER, buildNotification("Ожидание подключения..."))
         beginAccepting()
     }
 
@@ -55,12 +59,15 @@ class BluetoothServerService : Service() {
                 serverSocket = btAdapter.listenUsingRfcommWithServiceRecord(
                     Constants.BT_SERVER_NAME, Constants.BT_UUID
                 )
-                broadcastState(false)
+                broadcastState(false, "")
                 val socket = serverSocket!!.accept()
                 handleClient(socket)
+            } catch (e: SecurityException) {
+                // Разрешение BLUETOOTH_CONNECT не выдано
+                broadcastState(false, "")
             } catch (e: IOException) {
                 if (isActive) {
-                    broadcastState(false)
+                    broadcastState(false, "")
                     delay(2_000)
                     beginAccepting()
                 }
@@ -71,10 +78,15 @@ class BluetoothServerService : Service() {
     private suspend fun handleClient(socket: BluetoothSocket) {
         clientSocket = socket
         writer = PrintWriter(BufferedWriter(OutputStreamWriter(socket.outputStream)), true)
-        val name = runCatching { socket.remoteDevice.name }.getOrDefault(socket.remoteDevice.address)
-        isClientConnected = true
+
+        val name = try { socket.remoteDevice.name ?: socket.remoteDevice.address }
+                   catch (_: SecurityException) { socket.remoteDevice.address }
+
+        isClientConnected   = true
+        connectedClientName = name
         updateNotification("Подключён: $name")
-        broadcastState(true)
+        broadcastState(true, name)
+
         runCatching { serverSocket?.close() }
         serverSocket = null
         readLoop(socket)
@@ -90,9 +102,10 @@ class BluetoothServerService : Service() {
         } catch (_: IOException) {
         } finally {
             closeClient()
-            isClientConnected = false
-            broadcastState(false)
-            updateNotification("Ожидание клиента...")
+            isClientConnected   = false
+            connectedClientName = ""
+            broadcastState(false, "")
+            updateNotification("Ожидание подключения...")
             delay(500)
             beginAccepting()
         }
@@ -121,40 +134,45 @@ class BluetoothServerService : Service() {
     }
 
     fun sendTrackInfo(info: String) {
-        scope.launch {
-            runCatching { writer?.println("${Constants.CMD_TRACK_PREFIX}$info") }
-        }
+        scope.launch { runCatching { writer?.println("${Constants.CMD_TRACK_PREFIX}$info") } }
     }
 
-    private fun broadcastState(connected: Boolean) {
+    fun sendAlbumCover(base64: String) {
+        scope.launch { runCatching { writer?.println("${Constants.CMD_ART_PREFIX}$base64") } }
+    }
+
+    // FIX: setPackage → гарантирует доставку в RECEIVER_NOT_EXPORTED приёмники
+    private fun broadcastState(connected: Boolean, clientName: String) {
         sendBroadcast(Intent(Constants.ACTION_CONNECTION_CHANGED).apply {
+            setPackage(packageName)
             putExtra(Constants.EXTRA_CONNECTED, connected)
+            putExtra(Constants.EXTRA_CLIENT_NAME, clientName)
         })
     }
 
     private fun closeClient() {
-        runCatching { writer?.close() };  writer = null
-        runCatching { clientSocket?.close() };  clientSocket = null
+        runCatching { writer?.close() };    writer       = null
+        runCatching { clientSocket?.close() }; clientSocket = null
     }
 
     private fun closeAll() {
         closeClient()
-        runCatching { serverSocket?.close() };  serverSocket = null
+        runCatching { serverSocket?.close() }; serverSocket = null
     }
 
     private fun buildNotification(text: String): Notification {
         ensureChannel()
+        val piFlags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val tapIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, ServerActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }, piFlags
         )
         return Notification.Builder(this, Constants.NOTIF_CHANNEL_ID)
-            .setContentTitle("🎵 BT Music Server")
+            .setContentTitle("BT Music — Сервер")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setContentIntent(tapIntent)
             .setOngoing(true)
             .build()
@@ -168,11 +186,8 @@ class BluetoothServerService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(Constants.NOTIF_CHANNEL_ID) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(
-                    Constants.NOTIF_CHANNEL_ID,
-                    Constants.NOTIF_CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW
-                )
+                NotificationChannel(Constants.NOTIF_CHANNEL_ID, Constants.NOTIF_CHANNEL_NAME,
+                    NotificationManager.IMPORTANCE_LOW)
             )
         }
     }

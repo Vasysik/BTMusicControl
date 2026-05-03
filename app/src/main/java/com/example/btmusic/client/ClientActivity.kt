@@ -4,8 +4,10 @@ import android.Manifest
 import android.bluetooth.*
 import android.content.*
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
+import android.util.Base64
 import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,24 +22,33 @@ class ClientActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var tvTrack: TextView
     private lateinit var tvSavedDevice: TextView
+    private lateinit var ivAlbumArt: ImageView
     private lateinit var btnConnect: Button
     private lateinit var btnForget: Button
-    private lateinit var btnPrev: Button
-    private lateinit var btnPlay: Button
-    private lateinit var btnNext: Button
-    private lateinit var btnVolUp: Button
-    private lateinit var btnVolDown: Button
+    private lateinit var btnPrev: ImageButton
+    private lateinit var btnPlay: ImageButton
+    private lateinit var btnNext: ImageButton
+    private lateinit var btnVolUp: ImageButton
+    private lateinit var btnVolDown: ImageButton
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             when (intent.action) {
                 Constants.ACTION_CONNECTION_CHANGED -> {
                     val ok = intent.getBooleanExtra(Constants.EXTRA_CONNECTED, false)
-                    tvStatus.text = if (ok) "✅ Подключён" else "❌ Нет соединения"
+                    tvStatus.text = if (ok) "Подключён" else "Нет соединения"
                     setControlsEnabled(ok)
                 }
                 Constants.ACTION_TRACK_UPDATED ->
                     tvTrack.text = intent.getStringExtra(Constants.EXTRA_TRACK_INFO) ?: ""
+                Constants.ACTION_ART_UPDATED -> {
+                    val b64 = intent.getStringExtra(Constants.EXTRA_ART_BASE64) ?: return
+                    val bytes = Base64.decode(b64, Base64.NO_WRAP)
+                    val bmp   = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+                    ivAlbumArt.setImageBitmap(bmp)
+                    ivAlbumArt.setPadding(0, 0, 0, 0)   // убираем padding-заглушку
+                    ivAlbumArt.clearColorFilter()
+                }
             }
         }
     }
@@ -56,6 +67,7 @@ class ClientActivity : AppCompatActivity() {
         tvStatus      = findViewById(R.id.tv_status)
         tvTrack       = findViewById(R.id.tv_track)
         tvSavedDevice = findViewById(R.id.tv_saved_device)
+        ivAlbumArt    = findViewById(R.id.iv_album_art)
         btnConnect    = findViewById(R.id.btn_connect)
         btnForget     = findViewById(R.id.btn_forget)
         btnPrev       = findViewById(R.id.btn_prev)
@@ -65,29 +77,29 @@ class ClientActivity : AppCompatActivity() {
         btnVolDown    = findViewById(R.id.btn_vol_down)
 
         btnConnect.setOnClickListener { requestBtPermsAndPick() }
-
         btnForget.setOnClickListener {
             Prefs(this).forget()
             stopService(Intent(this, BluetoothClientService::class.java))
-            tvStatus.text = "❌ Нет соединения"
+            tvStatus.text = "Нет соединения"
             tvTrack.text  = ""
+            ivAlbumArt.setImageResource(android.R.drawable.ic_media_play)
             setControlsEnabled(false)
             refreshSavedDeviceUI()
         }
 
-        btnPrev.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_PREV) }
-        btnPlay.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_PLAY) }
-        btnNext.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_NEXT) }
-        btnVolUp.setOnClickListener  { BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_UP) }
-        btnVolDown.setOnClickListener{ BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_DOWN) }
+        btnPrev.setOnClickListener    { BluetoothClientService.instance?.sendCommand(Constants.CMD_PREV) }
+        btnPlay.setOnClickListener    { BluetoothClientService.instance?.sendCommand(Constants.CMD_PLAY) }
+        btnNext.setOnClickListener    { BluetoothClientService.instance?.sendCommand(Constants.CMD_NEXT) }
+        btnVolUp.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_UP) }
+        btnVolDown.setOnClickListener { BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_DOWN) }
     }
 
     override fun onResume() {
         super.onResume()
-
         val filter = IntentFilter().apply {
             addAction(Constants.ACTION_CONNECTION_CHANGED)
             addAction(Constants.ACTION_TRACK_UPDATED)
+            addAction(Constants.ACTION_ART_UPDATED)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(stateReceiver, filter, RECEIVER_NOT_EXPORTED)
@@ -95,9 +107,8 @@ class ClientActivity : AppCompatActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(stateReceiver, filter)
         }
-
         val connected = BluetoothClientService.instance?.isConnected ?: false
-        tvStatus.text = if (connected) "✅ Подключён" else "❌ Нет соединения"
+        tvStatus.text = if (connected) "Подключён" else "Нет соединения"
         setControlsEnabled(connected)
         refreshSavedDeviceUI()
     }
@@ -112,7 +123,7 @@ class ClientActivity : AppCompatActivity() {
         val name  = prefs.savedDeviceName
         val addr  = prefs.savedDeviceAddress
         if (addr != null) {
-            tvSavedDevice.text   = "📱 Привязано: ${name ?: addr}"
+            tvSavedDevice.text   = "Привязано: ${name ?: addr}"
             btnForget.visibility = View.VISIBLE
             btnConnect.text      = "Сменить устройство"
         } else {
@@ -132,23 +143,26 @@ class ClientActivity : AppCompatActivity() {
             }
             if (needed.isEmpty()) showDevicePicker()
             else btPermLauncher.launch(needed.toTypedArray())
-        } else {
-            showDevicePicker()
-        }
+        } else showDevicePicker()
     }
 
     private fun showDevicePicker() {
-        val adapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
-        if (!adapter.isEnabled) {
+        val adapter = try {
+            (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
+        } catch (_: Exception) { null }
+        if (adapter == null || !adapter.isEnabled) {
             Toast.makeText(this, "Включите Bluetooth", Toast.LENGTH_SHORT).show()
             return
         }
-        val paired = adapter.bondedDevices.toList()
+        val paired = try { adapter.bondedDevices.toList() } catch (_: SecurityException) { emptyList() }
         if (paired.isEmpty()) {
-            Toast.makeText(this, "Нет сопряжённых устройств. Сначала свяжите телефоны в настройках Bluetooth.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Нет сопряжённых устройств", Toast.LENGTH_LONG).show()
             return
         }
-        val labels = paired.map { "${it.name ?: "Unknown"} (${it.address})" }.toTypedArray()
+        val labels = paired.map {
+            try { "${it.name} (${it.address})" } catch (_: SecurityException) { it.address }
+        }.toTypedArray()
+
         android.app.AlertDialog.Builder(this)
             .setTitle("Выберите сервер")
             .setItems(labels) { _, idx -> connectTo(paired[idx]) }
@@ -156,12 +170,13 @@ class ClientActivity : AppCompatActivity() {
     }
 
     private fun connectTo(device: BluetoothDevice) {
+        val name = try { device.name } catch (_: SecurityException) { device.address }
         Prefs(this).apply {
             savedDeviceAddress = device.address
-            savedDeviceName    = device.name ?: device.address
+            savedDeviceName    = name ?: device.address
         }
         refreshSavedDeviceUI()
-        tvStatus.text = "⏳ Подключение к ${device.name}..."
+        tvStatus.text = "Подключение..."
         val intent = Intent(this, BluetoothClientService::class.java).apply {
             putExtra(Constants.EXTRA_DEVICE_ADDRESS, device.address)
         }

@@ -41,4 +41,7 @@ dependencies {
 
     // lifecycle-service для CoroutineScope в Service
     implementation "androidx.lifecycle:lifecycle-service:2.7.0"
+
+    // CardView для карточек в UI
+    implementation "androidx.cardview:cardview:1.0.0"
 }

@@ -7,13 +7,16 @@ object Constants {
     val BT_UUID: UUID = UUID.fromString("fa87c0d0-afac-11de-8a39-0800200c9a66")
     const val BT_SERVER_NAME = "BTMusicServer"
 
-    // Протокол
-    const val CMD_PLAY         = "PLAY"
-    const val CMD_NEXT         = "NEXT"
-    const val CMD_PREV         = "PREV"
-    const val CMD_VOL_UP       = "VOL_UP"
-    const val CMD_VOL_DOWN     = "VOL_DOWN"
+    // Протокол команды (клиент → сервер)
+    const val CMD_PLAY     = "PLAY"
+    const val CMD_NEXT     = "NEXT"
+    const val CMD_PREV     = "PREV"
+    const val CMD_VOL_UP   = "VOL_UP"
+    const val CMD_VOL_DOWN = "VOL_DOWN"
+
+    // Протокол данные (сервер → клиент)
     const val CMD_TRACK_PREFIX = "TRACK:"
+    const val CMD_ART_PREFIX   = "ART:"     // за ним идёт base64 JPEG без переносов
 
     // Интенты от KeyMapper → Client
     const val ACTION_BT_PLAY = "com.mygadget.action.PLAY_PAUSE"
@@ -23,8 +26,11 @@ object Constants {
     // Широковещательные события Service → Activity
     const val ACTION_CONNECTION_CHANGED = "com.btmusic.CONNECTION_CHANGED"
     const val ACTION_TRACK_UPDATED      = "com.btmusic.TRACK_UPDATED"
+    const val ACTION_ART_UPDATED        = "com.btmusic.ART_UPDATED"
     const val EXTRA_CONNECTED           = "connected"
     const val EXTRA_TRACK_INFO          = "track_info"
+    const val EXTRA_ART_BASE64          = "art_b64"
+    const val EXTRA_CLIENT_NAME         = "client_name"
 
     // Параметры для старта сервисов
     const val EXTRA_DEVICE_ADDRESS = "device_address"
