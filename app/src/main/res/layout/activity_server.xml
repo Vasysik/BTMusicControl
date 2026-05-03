@@ -73,7 +73,6 @@
         android:layout_width="match_parent"
         android:layout_height="48dp"
         android:text="Доступ к уведомлениям (треки)"
-        android:textSize="13sp"
-        style="@style/Widget.AppCompat.Button.Borderless"/>
+        android:textSize="13sp"/>
 
 </LinearLayout>

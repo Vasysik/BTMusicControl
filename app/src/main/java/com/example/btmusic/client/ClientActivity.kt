@@ -12,6 +12,7 @@ import android.view.View
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import com.example.btmusic.R
 import com.example.btmusic.common.Constants
@@ -20,14 +21,15 @@ import java.util.Locale
 
 class ClientActivity : AppCompatActivity() {
 
-    private lateinit var tvStatus: TextView
+    private lateinit var cardArt: CardView
     private lateinit var tvTrack: TextView
     private lateinit var tvSavedDevice: TextView
-    private lateinit var tvTime: TextView
+    private lateinit var tvTimeCurrent: TextView
+    private lateinit var tvTimeTotal: TextView
     private lateinit var ivAlbumArt: ImageView
     private lateinit var seekBar: SeekBar
     private lateinit var btnConnect: Button
-    private lateinit var btnForget: Button
+    private lateinit var btnForget: ImageButton
     private lateinit var btnPrev: ImageButton
     private lateinit var btnPlay: ImageButton
     private lateinit var btnNext: ImageButton
@@ -41,8 +43,8 @@ class ClientActivity : AppCompatActivity() {
             when (intent.action) {
                 Constants.ACTION_CONNECTION_CHANGED -> {
                     val ok = intent.getBooleanExtra(Constants.EXTRA_CONNECTED, false)
-                    tvStatus.text = if (ok) "Подключён" else "Нет соединения"
                     setControlsEnabled(ok)
+                    refreshSavedDeviceUI()
                 }
                 Constants.ACTION_TRACK_UPDATED ->
                     tvTrack.text = intent.getStringExtra(Constants.EXTRA_TRACK_INFO) ?: ""
@@ -56,20 +58,18 @@ class ClientActivity : AppCompatActivity() {
                 }
                 Constants.ACTION_STATE_UPDATED -> {
                     val isPlaying = intent.getBooleanExtra(Constants.EXTRA_IS_PLAYING, false)
-                    // Меняем иконку в зависимости от статуса
                     btnPlay.setImageResource(
                         if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_pause
                     )
                 }
                 Constants.ACTION_POSITION_UPDATED -> {
-                    if (isDraggingSeekBar) return // Не дергаем ползунок, если юзер его тащит
-                    
+                    if (isDraggingSeekBar) return
                     val posMs = intent.getLongExtra(Constants.EXTRA_POSITION_MS, 0)
                     val durMs = intent.getLongExtra(Constants.EXTRA_DURATION_MS, 0)
-                    
                     seekBar.max = durMs.toInt()
                     seekBar.progress = posMs.toInt()
-                    tvTime.text = "${formatTime(posMs)} / ${formatTime(durMs)}"
+                    tvTimeCurrent.text = formatTime(posMs)
+                    tvTimeTotal.text   = formatTime(durMs)
                 }
             }
         }
@@ -86,10 +86,11 @@ class ClientActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_client)
 
-        tvStatus      = findViewById(R.id.tv_status)
+        cardArt       = findViewById(R.id.card_art)
         tvTrack       = findViewById(R.id.tv_track)
         tvSavedDevice = findViewById(R.id.tv_saved_device)
-        tvTime        = findViewById(R.id.tv_time)
+        tvTimeCurrent = findViewById(R.id.tv_time_current)
+        tvTimeTotal   = findViewById(R.id.tv_time_total)
         ivAlbumArt    = findViewById(R.id.iv_album_art)
         seekBar       = findViewById(R.id.seek_bar)
         btnConnect    = findViewById(R.id.btn_connect)
@@ -100,6 +101,13 @@ class ClientActivity : AppCompatActivity() {
         btnVolUp      = findViewById(R.id.btn_vol_up)
         btnVolDown    = findViewById(R.id.btn_vol_down)
 
+        // Делаем карточку квадратной: высота = ширина после первого layout-прохода
+        cardArt.post {
+            val lp = cardArt.layoutParams
+            lp.height = cardArt.width
+            cardArt.layoutParams = lp
+        }
+
         ivAlbumArt.setColorFilter(
             ContextCompat.getColor(this, android.R.color.darker_gray)
         )
@@ -108,12 +116,16 @@ class ClientActivity : AppCompatActivity() {
         btnForget.setOnClickListener {
             Prefs(this).forget()
             stopService(Intent(this, BluetoothClientService::class.java))
-            tvStatus.text = "Нет соединения"
-            tvTrack.text  = ""
-            tvTime.text   = "00:00 / 00:00"
-            seekBar.progress = 0
+            tvTrack.text       = ""
+            tvTimeCurrent.text = "00:00"
+            tvTimeTotal.text   = "00:00"
+            seekBar.progress   = 0
             btnPlay.setImageResource(R.drawable.ic_play_pause)
             ivAlbumArt.setImageResource(android.R.drawable.ic_media_play)
+            ivAlbumArt.setColorFilter(
+                ContextCompat.getColor(this, android.R.color.darker_gray)
+            )
+            ivAlbumArt.setPadding(80, 80, 80, 80)
             setControlsEnabled(false)
             refreshSavedDeviceUI()
         }
@@ -124,18 +136,14 @@ class ClientActivity : AppCompatActivity() {
         btnVolUp.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_UP) }
         btnVolDown.setOnClickListener { BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_DOWN) }
 
-        // Логика перемещения ползунка пользователем
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser) tvTime.text = "${formatTime(progress.toLong())} / ${formatTime(bar?.max?.toLong() ?: 0)}"
+                if (fromUser) tvTimeCurrent.text = formatTime(progress.toLong())
             }
-            override fun onStartTrackingTouch(bar: SeekBar?) {
-                isDraggingSeekBar = true
-            }
+            override fun onStartTrackingTouch(bar: SeekBar?) { isDraggingSeekBar = true }
             override fun onStopTrackingTouch(bar: SeekBar?) {
                 isDraggingSeekBar = false
                 val pos = bar?.progress ?: 0
-                // Отправляем команду перемотки на сервер
                 BluetoothClientService.instance?.sendCommand("${Constants.CMD_SEEK_PREFIX}$pos")
             }
         })
@@ -157,7 +165,6 @@ class ClientActivity : AppCompatActivity() {
             registerReceiver(stateReceiver, filter)
         }
         val connected = BluetoothClientService.instance?.isConnected ?: false
-        tvStatus.text = if (connected) "Подключён" else "Нет соединения"
         setControlsEnabled(connected)
         refreshSavedDeviceUI()
     }
@@ -168,11 +175,14 @@ class ClientActivity : AppCompatActivity() {
     }
 
     private fun refreshSavedDeviceUI() {
-        val prefs = Prefs(this)
-        val name  = prefs.savedDeviceName
-        val addr  = prefs.savedDeviceAddress
+        val prefs     = Prefs(this)
+        val name      = prefs.savedDeviceName
+        val addr      = prefs.savedDeviceAddress
+        val connected = BluetoothClientService.instance?.isConnected ?: false
+        val statusStr = if (connected) "Подключён" else "Нет соединения"
+
         if (addr != null) {
-            tvSavedDevice.text   = "Привязано: ${name ?: addr}"
+            tvSavedDevice.text   = "Привязано: ${name ?: addr} ($statusStr)"
             btnForget.visibility = View.VISIBLE
             btnConnect.text      = "Сменить устройство"
         } else {
@@ -225,7 +235,6 @@ class ClientActivity : AppCompatActivity() {
             savedDeviceName    = name ?: device.address
         }
         refreshSavedDeviceUI()
-        tvStatus.text = "Подключение..."
         val intent = Intent(this, BluetoothClientService::class.java).apply {
             putExtra(Constants.EXTRA_DEVICE_ADDRESS, device.address)
         }

@@ -25,7 +25,6 @@ class MusicNotificationListener : NotificationListenerService() {
     private var lastCoverHash  = 0
     private var activeController: MediaController? = null
 
-    // Опрос позиции раз в 500 мс пока воспроизведение идёт
     private val handler = Handler(Looper.getMainLooper())
     private val positionRunnable = object : Runnable {
         override fun run() {
@@ -70,7 +69,6 @@ class MusicNotificationListener : NotificationListenerService() {
         if (sbn.packageName !in musicPackages) return
         val extras: Bundle = sbn.notification.extras
 
-        // Fallback: если MediaSession недоступна, достаём из extras уведомления
         @Suppress("DEPRECATION")
         val token = extras.getParcelable<MediaSession.Token>("android.mediaSession")
         if (token != null) {
@@ -80,7 +78,7 @@ class MusicNotificationListener : NotificationListenerService() {
                     activeController?.unregisterCallback(controllerCallback)
                     activeController = ctrl
                     ctrl.registerCallback(controllerCallback)
-                    // Сразу обновляем состояние при подключении
+                    BluetoothServerService.instance?.activeMediaController = ctrl
                     controllerCallback.onPlaybackStateChanged(ctrl.playbackState)
                     controllerCallback.onMetadataChanged(ctrl.metadata)
                 }
@@ -103,6 +101,7 @@ class MusicNotificationListener : NotificationListenerService() {
         super.onDestroy()
         handler.removeCallbacks(positionRunnable)
         activeController?.unregisterCallback(controllerCallback)
+        BluetoothServerService.instance?.activeMediaController = null
     }
 
     private fun compressToBase64(src: Bitmap): String {
