@@ -5,6 +5,8 @@ import android.bluetooth.*
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.media.AudioManager
+import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.os.*
 import android.view.KeyEvent
 import com.example.btmusic.R
@@ -31,8 +33,10 @@ class BluetoothServerService : Service() {
     @Volatile var connectedClientName: String = ""
         private set
 
+    // Текущий активный MediaController (для seek)
+    var activeMediaController: MediaController? = null
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var listenJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -42,7 +46,6 @@ class BluetoothServerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
@@ -53,8 +56,7 @@ class BluetoothServerService : Service() {
     }
 
     private fun beginAccepting() {
-        listenJob?.cancel()
-        listenJob = scope.launch {
+        scope.launch {
             try {
                 serverSocket = btAdapter.listenUsingRfcommWithServiceRecord(
                     Constants.BT_SERVER_NAME, Constants.BT_UUID
@@ -62,15 +64,9 @@ class BluetoothServerService : Service() {
                 broadcastState(false, "")
                 val socket = serverSocket!!.accept()
                 handleClient(socket)
-            } catch (e: SecurityException) {
-                // Разрешение BLUETOOTH_CONNECT не выдано
-                broadcastState(false, "")
-            } catch (e: IOException) {
-                if (isActive) {
-                    broadcastState(false, "")
-                    delay(2_000)
-                    beginAccepting()
-                }
+            } catch (_: SecurityException) { broadcastState(false, "") }
+              catch (e: IOException) {
+                if (isActive) { broadcastState(false, ""); delay(2_000); beginAccepting() }
             }
         }
     }
@@ -78,15 +74,12 @@ class BluetoothServerService : Service() {
     private suspend fun handleClient(socket: BluetoothSocket) {
         clientSocket = socket
         writer = PrintWriter(BufferedWriter(OutputStreamWriter(socket.outputStream)), true)
-
         val name = try { socket.remoteDevice.name ?: socket.remoteDevice.address }
                    catch (_: SecurityException) { socket.remoteDevice.address }
-
         isClientConnected   = true
         connectedClientName = name
         updateNotification("Подключён: $name")
         broadcastState(true, name)
-
         runCatching { serverSocket?.close() }
         serverSocket = null
         readLoop(socket)
@@ -95,10 +88,7 @@ class BluetoothServerService : Service() {
     private suspend fun readLoop(socket: BluetoothSocket) {
         val reader = BufferedReader(InputStreamReader(socket.inputStream))
         try {
-            while (true) {
-                val line = reader.readLine() ?: break
-                dispatchCommand(line.trim())
-            }
+            while (true) dispatchCommand(reader.readLine() ?: break)
         } catch (_: IOException) {
         } finally {
             closeClient()
@@ -113,35 +103,41 @@ class BluetoothServerService : Service() {
 
     private fun dispatchCommand(cmd: String) {
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
-        when (cmd) {
-            Constants.CMD_PLAY -> {
+        when {
+            cmd == Constants.CMD_PLAY -> {
                 am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
                 am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
             }
-            Constants.CMD_NEXT -> {
+            cmd == Constants.CMD_NEXT -> {
                 am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
                 am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_NEXT))
             }
-            Constants.CMD_PREV -> {
+            cmd == Constants.CMD_PREV -> {
                 am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
                 am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PREVIOUS))
             }
-            Constants.CMD_VOL_UP ->
-                am.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
-            Constants.CMD_VOL_DOWN ->
-                am.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            cmd == Constants.CMD_VOL_UP   -> am.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
+            cmd == Constants.CMD_VOL_DOWN -> am.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            cmd.startsWith(Constants.CMD_SEEK_PREFIX) -> {
+                val posMs = cmd.removePrefix(Constants.CMD_SEEK_PREFIX).toLongOrNull() ?: return
+                activeMediaController?.transportControls?.seekTo(posMs)
+                    ?: run {
+                        // Fallback: нет MediaController → шлём KEYCODE с задержкой невозможен,
+                        // но хотя бы попробуем через AudioManager (не работает для seek, просто игнорируем)
+                    }
+            }
         }
     }
 
-    fun sendTrackInfo(info: String) {
-        scope.launch { runCatching { writer?.println("${Constants.CMD_TRACK_PREFIX}$info") } }
+    fun sendTrackInfo(info: String)         { send("${Constants.CMD_TRACK_PREFIX}$info") }
+    fun sendAlbumCover(base64: String)      { send("${Constants.CMD_ART_PREFIX}$base64") }
+    fun sendPlaybackState(playing: Boolean) { send("${Constants.CMD_STATE_PREFIX}${if (playing) 1 else 0}") }
+    fun sendPosition(posMs: Long, durMs: Long) { send("${Constants.CMD_POS_PREFIX}$posMs:$durMs") }
+
+    private fun send(line: String) {
+        scope.launch { runCatching { writer?.println(line) } }
     }
 
-    fun sendAlbumCover(base64: String) {
-        scope.launch { runCatching { writer?.println("${Constants.CMD_ART_PREFIX}$base64") } }
-    }
-
-    // FIX: setPackage → гарантирует доставку в RECEIVER_NOT_EXPORTED приёмники
     private fun broadcastState(connected: Boolean, clientName: String) {
         sendBroadcast(Intent(Constants.ACTION_CONNECTION_CHANGED).apply {
             setPackage(packageName)
@@ -151,7 +147,7 @@ class BluetoothServerService : Service() {
     }
 
     private fun closeClient() {
-        runCatching { writer?.close() };    writer       = null
+        runCatching { writer?.close() };       writer       = null
         runCatching { clientSocket?.close() }; clientSocket = null
     }
 

@@ -18,7 +18,6 @@ class BluetoothClientService : Service() {
 
     companion object {
         @Volatile var instance: BluetoothClientService? = null
-
         private const val ACTION_NOTIF_PREV   = "com.btmusic.notif.PREV"
         private const val ACTION_NOTIF_PLAY   = "com.btmusic.notif.PLAY"
         private const val ACTION_NOTIF_NEXT   = "com.btmusic.notif.NEXT"
@@ -37,8 +36,9 @@ class BluetoothClientService : Service() {
     @Volatile var isConnected: Boolean = false
         private set
 
-    private var currentTrack: String = ""
-    private var currentArtBitmap: Bitmap? = null   // кэш для уведомления
+    private var currentTrack: String  = ""
+    private var isPlaying: Boolean    = false
+    private var currentArtBitmap: Bitmap? = null
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var connectJob: Job? = null
@@ -58,36 +58,29 @@ class BluetoothClientService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-
         val filter = IntentFilter().apply {
             addAction(ACTION_NOTIF_PREV); addAction(ACTION_NOTIF_PLAY)
             addAction(ACTION_NOTIF_NEXT); addAction(ACTION_NOTIF_VOL_UP)
             addAction(ACTION_NOTIF_VOL_DN)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
             registerReceiver(notifReceiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
+        else {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(notifReceiver, filter)
         }
-
         startForeground(Constants.NOTIF_ID_CLIENT, buildNotification("Инициализация..."))
-
         val saved = Prefs(this).savedDeviceAddress
-        if (saved != null) { targetAddress = saved; connectTo(saved) }
-        else stopSelf()
+        if (saved != null) { targetAddress = saved; connectTo(saved) } else stopSelf()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val address = intent?.getStringExtra(Constants.EXTRA_DEVICE_ADDRESS)
             ?: Prefs(this).savedDeviceAddress
-
         return if (address != null) {
             if (address != targetAddress) { targetAddress = address; connectTo(address) }
             START_STICKY
-        } else {
-            stopSelf(); START_NOT_STICKY
-        }
+        } else { stopSelf(); START_NOT_STICKY }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -103,49 +96,34 @@ class BluetoothClientService : Service() {
     private fun connectTo(address: String) {
         connectJob?.cancel()
         connectJob = scope.launch {
-            isConnected = false
-            broadcastState(false)
+            isConnected = false; broadcastState(false)
             updateNotification("Подключение...")
             var retryDelay = 3_000L
-
             while (isActive) {
                 try {
                     val device = btAdapter.getRemoteDevice(address)
-
                     val btSocket = try {
                         device.createRfcommSocketToServiceRecord(Constants.BT_UUID)
-                    } catch (_: SecurityException) {
-                        delay(retryDelay); continue    // нет разрешения — ждём
-                    } catch (e: Exception) {
+                    } catch (_: SecurityException) { delay(retryDelay); continue }
+                      catch (e: Exception) {
                         @Suppress("UNCHECKED_CAST")
-                        device.javaClass.getMethod("createRfcommSocket", Int::class.java)
-                            .invoke(device, 1) as BluetoothSocket
+                        device.javaClass.getMethod("createRfcommSocket", Int::class.java).invoke(device, 1) as BluetoothSocket
                     }
-
                     try { btAdapter.cancelDiscovery() } catch (_: SecurityException) {}
-
                     btSocket.connect()
                     socket = btSocket
                     writer = PrintWriter(BufferedWriter(OutputStreamWriter(btSocket.outputStream)), true)
-
                     retryDelay = 3_000L
                     isConnected = true
                     val name = try { device.name } catch (_: SecurityException) { address }
-                    val label = if (currentTrack.isNotEmpty()) currentTrack else "Подключён: $name"
-                    updateNotification(label)
+                    updateNotification(if (currentTrack.isNotEmpty()) currentTrack else "Подключён: $name")
                     broadcastState(true)
                     readLoop(btSocket)
-
-                } catch (_: SecurityException) {
-                    // BLUETOOTH_CONNECT не выдан — нет смысла ретраиться быстро
-                    delay(30_000L)
+                } catch (_: SecurityException) { delay(30_000L)
                 } catch (_: IOException) {
-                    closeSocket()
-                    isConnected = false
-                    broadcastState(false)
+                    closeSocket(); isConnected = false; broadcastState(false)
                     updateNotification("Переподключение через ${retryDelay / 1000}с...")
-                    delay(retryDelay)
-                    retryDelay = minOf(retryDelay * 2, 60_000L)
+                    delay(retryDelay); retryDelay = minOf(retryDelay * 2, 60_000L)
                 }
             }
         }
@@ -164,7 +142,7 @@ class BluetoothClientService : Service() {
                         broadcastTrack(info)
                     }
                     line.startsWith(Constants.CMD_ART_PREFIX) -> {
-                        val b64 = line.removePrefix(Constants.CMD_ART_PREFIX)
+                        val b64   = line.removePrefix(Constants.CMD_ART_PREFIX)
                         val bytes = Base64.decode(b64, Base64.NO_WRAP)
                         val bmp   = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         if (bmp != null) {
@@ -173,71 +151,78 @@ class BluetoothClientService : Service() {
                             broadcastArt(b64)
                         }
                     }
+                    line.startsWith(Constants.CMD_STATE_PREFIX) -> {
+                        val playing = line.removePrefix(Constants.CMD_STATE_PREFIX) == "1"
+                        isPlaying   = playing
+                        updateNotification(currentTrack.ifEmpty { "BT Music Remote" })
+                        broadcastPlayState(playing)
+                    }
+                    line.startsWith(Constants.CMD_POS_PREFIX) -> {
+                        val parts = line.removePrefix(Constants.CMD_POS_PREFIX).split(":")
+                        if (parts.size == 2) {
+                            val posMs = parts[0].toLongOrNull() ?: continue
+                            val durMs = parts[1].toLongOrNull() ?: continue
+                            broadcastPosition(posMs, durMs)
+                        }
+                    }
                 }
             }
         } catch (_: IOException) {
         } finally {
-            closeSocket()
-            isConnected = false
-            broadcastState(false)
+            closeSocket(); isConnected = false; broadcastState(false)
         }
     }
 
-    fun sendCommand(cmd: String) {
-        scope.launch { runCatching { writer?.println(cmd) } }
-    }
+    fun sendCommand(cmd: String) { scope.launch { runCatching { writer?.println(cmd) } } }
 
-    // FIX: setPackage → гарантирует доставку в RECEIVER_NOT_EXPORTED
     private fun broadcastState(connected: Boolean) {
         sendBroadcast(Intent(Constants.ACTION_CONNECTION_CHANGED).apply {
-            setPackage(packageName)
-            putExtra(Constants.EXTRA_CONNECTED, connected)
+            setPackage(packageName); putExtra(Constants.EXTRA_CONNECTED, connected)
         })
     }
-
     private fun broadcastTrack(info: String) {
         sendBroadcast(Intent(Constants.ACTION_TRACK_UPDATED).apply {
-            setPackage(packageName)
-            putExtra(Constants.EXTRA_TRACK_INFO, info)
+            setPackage(packageName); putExtra(Constants.EXTRA_TRACK_INFO, info)
         })
     }
-
     private fun broadcastArt(b64: String) {
         sendBroadcast(Intent(Constants.ACTION_ART_UPDATED).apply {
+            setPackage(packageName); putExtra(Constants.EXTRA_ART_BASE64, b64)
+        })
+    }
+    private fun broadcastPlayState(playing: Boolean) {
+        sendBroadcast(Intent(Constants.ACTION_STATE_UPDATED).apply {
+            setPackage(packageName); putExtra(Constants.EXTRA_IS_PLAYING, playing)
+        })
+    }
+    private fun broadcastPosition(posMs: Long, durMs: Long) {
+        sendBroadcast(Intent(Constants.ACTION_POSITION_UPDATED).apply {
             setPackage(packageName)
-            putExtra(Constants.EXTRA_ART_BASE64, b64)
+            putExtra(Constants.EXTRA_POSITION_MS, posMs)
+            putExtra(Constants.EXTRA_DURATION_MS, durMs)
         })
     }
 
     private fun closeSocket() {
-        runCatching { writer?.close() };   writer = null
-        runCatching { socket?.close() };   socket = null
+        runCatching { writer?.close() };  writer = null
+        runCatching { socket?.close() };  socket = null
     }
-
-    // ─── Уведомление с кнопками управления ───────────────────────────────────
 
     private fun buildNotification(text: String): Notification {
         ensureChannel()
         val piFlags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-
-        val prevIntent  = PendingIntent.getBroadcast(this, 10, Intent(ACTION_NOTIF_PREV),   piFlags)
-        val playIntent  = PendingIntent.getBroadcast(this, 11, Intent(ACTION_NOTIF_PLAY),   piFlags)
-        val nextIntent  = PendingIntent.getBroadcast(this, 12, Intent(ACTION_NOTIF_NEXT),   piFlags)
-        val volUpIntent = PendingIntent.getBroadcast(this, 13, Intent(ACTION_NOTIF_VOL_UP), piFlags)
-        val volDnIntent = PendingIntent.getBroadcast(this, 14, Intent(ACTION_NOTIF_VOL_DN), piFlags)
-
+        fun pi(requestCode: Int, action: String) =
+            PendingIntent.getBroadcast(this, requestCode, Intent(action), piFlags)
         val tapIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, ClientActivity::class.java).apply {
                 this.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }, piFlags
         )
-
-        // FIX: новый API Icon вместо устаревшего конструктора с Int
         fun action(iconRes: Int, label: String, pi: PendingIntent) =
-            Notification.Action.Builder(
-                Icon.createWithResource(this, iconRes), label, pi
-            ).build()
+            Notification.Action.Builder(Icon.createWithResource(this, iconRes), label, pi).build()
+
+        val playIcon = if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_pause
 
         val builder = Notification.Builder(this, Constants.NOTIF_CHANNEL_ID)
             .setContentTitle("BT Music Remote")
@@ -245,16 +230,13 @@ class BluetoothClientService : Service() {
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(tapIntent)
             .setOngoing(true)
-            .addAction(action(R.drawable.ic_vol_down,   "Vol-", volDnIntent))
-            .addAction(action(android.R.drawable.ic_media_previous, "Пред", prevIntent))
-            .addAction(action(android.R.drawable.ic_media_play,    "Play", playIntent))
-            .addAction(action(android.R.drawable.ic_media_next,     "След", nextIntent))
-            .addAction(action(R.drawable.ic_vol_up,     "Vol+", volUpIntent))
+            .addAction(action(R.drawable.ic_vol_down,    "Vol-", pi(10, ACTION_NOTIF_VOL_DN)))
+            .addAction(action(R.drawable.ic_prev,        "Пред", pi(11, ACTION_NOTIF_PREV)))
+            .addAction(action(playIcon,                  "Play", pi(12, ACTION_NOTIF_PLAY)))
+            .addAction(action(R.drawable.ic_next,        "След", pi(13, ACTION_NOTIF_NEXT)))
+            .addAction(action(R.drawable.ic_vol_up,      "Vol+", pi(14, ACTION_NOTIF_VOL_UP)))
             .setStyle(Notification.MediaStyle().setShowActionsInCompactView(1, 2, 3))
-
-        // Обложка в уведомлении если есть
         currentArtBitmap?.let { builder.setLargeIcon(it) }
-
         return builder.build()
     }
 
@@ -265,10 +247,9 @@ class BluetoothClientService : Service() {
     private fun ensureChannel() {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(Constants.NOTIF_CHANNEL_ID) == null) {
-            nm.createNotificationChannel(
-                NotificationChannel(Constants.NOTIF_CHANNEL_ID, Constants.NOTIF_CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW)
-            )
+            nm.createNotificationChannel(NotificationChannel(
+                Constants.NOTIF_CHANNEL_ID, Constants.NOTIF_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW))
         }
     }
 }

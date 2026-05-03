@@ -16,20 +16,25 @@ import androidx.core.content.ContextCompat
 import com.example.btmusic.R
 import com.example.btmusic.common.Constants
 import com.example.btmusic.common.Prefs
+import java.util.Locale
 
 class ClientActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
     private lateinit var tvTrack: TextView
     private lateinit var tvSavedDevice: TextView
+    private lateinit var tvTime: TextView
     private lateinit var ivAlbumArt: ImageView
+    private lateinit var seekBar: SeekBar
     private lateinit var btnConnect: Button
-    private lateinit var btnForget: ImageButton
+    private lateinit var btnForget: Button
     private lateinit var btnPrev: ImageButton
     private lateinit var btnPlay: ImageButton
     private lateinit var btnNext: ImageButton
     private lateinit var btnVolUp: ImageButton
     private lateinit var btnVolDown: ImageButton
+
+    private var isDraggingSeekBar = false
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
@@ -46,8 +51,25 @@ class ClientActivity : AppCompatActivity() {
                     val bytes = Base64.decode(b64, Base64.NO_WRAP)
                     val bmp   = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
                     ivAlbumArt.setImageBitmap(bmp)
-                    ivAlbumArt.setPadding(0, 0, 0, 0)   // убираем padding заглушки
-                    ivAlbumArt.clearColorFilter()         // снимаем серый тинт заглушки
+                    ivAlbumArt.setPadding(0, 0, 0, 0)
+                    ivAlbumArt.clearColorFilter()
+                }
+                Constants.ACTION_STATE_UPDATED -> {
+                    val isPlaying = intent.getBooleanExtra(Constants.EXTRA_IS_PLAYING, false)
+                    // Меняем иконку в зависимости от статуса
+                    btnPlay.setImageResource(
+                        if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play_pause
+                    )
+                }
+                Constants.ACTION_POSITION_UPDATED -> {
+                    if (isDraggingSeekBar) return // Не дергаем ползунок, если юзер его тащит
+                    
+                    val posMs = intent.getLongExtra(Constants.EXTRA_POSITION_MS, 0)
+                    val durMs = intent.getLongExtra(Constants.EXTRA_DURATION_MS, 0)
+                    
+                    seekBar.max = durMs.toInt()
+                    seekBar.progress = posMs.toInt()
+                    tvTime.text = "${formatTime(posMs)} / ${formatTime(durMs)}"
                 }
             }
         }
@@ -67,7 +89,9 @@ class ClientActivity : AppCompatActivity() {
         tvStatus      = findViewById(R.id.tv_status)
         tvTrack       = findViewById(R.id.tv_track)
         tvSavedDevice = findViewById(R.id.tv_saved_device)
+        tvTime        = findViewById(R.id.tv_time)
         ivAlbumArt    = findViewById(R.id.iv_album_art)
+        seekBar       = findViewById(R.id.seek_bar)
         btnConnect    = findViewById(R.id.btn_connect)
         btnForget     = findViewById(R.id.btn_forget)
         btnPrev       = findViewById(R.id.btn_prev)
@@ -76,9 +100,8 @@ class ClientActivity : AppCompatActivity() {
         btnVolUp      = findViewById(R.id.btn_vol_up)
         btnVolDown    = findViewById(R.id.btn_vol_down)
 
-        // Тинт только для иконки-заглушки (серая нотка на фоне)
         ivAlbumArt.setColorFilter(
-            androidx.core.content.ContextCompat.getColor(this, android.R.color.darker_gray)
+            ContextCompat.getColor(this, android.R.color.darker_gray)
         )
 
         btnConnect.setOnClickListener { requestBtPermsAndPick() }
@@ -87,6 +110,9 @@ class ClientActivity : AppCompatActivity() {
             stopService(Intent(this, BluetoothClientService::class.java))
             tvStatus.text = "Нет соединения"
             tvTrack.text  = ""
+            tvTime.text   = "00:00 / 00:00"
+            seekBar.progress = 0
+            btnPlay.setImageResource(R.drawable.ic_play_pause)
             ivAlbumArt.setImageResource(android.R.drawable.ic_media_play)
             setControlsEnabled(false)
             refreshSavedDeviceUI()
@@ -97,6 +123,22 @@ class ClientActivity : AppCompatActivity() {
         btnNext.setOnClickListener    { BluetoothClientService.instance?.sendCommand(Constants.CMD_NEXT) }
         btnVolUp.setOnClickListener   { BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_UP) }
         btnVolDown.setOnClickListener { BluetoothClientService.instance?.sendCommand(Constants.CMD_VOL_DOWN) }
+
+        // Логика перемещения ползунка пользователем
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) tvTime.text = "${formatTime(progress.toLong())} / ${formatTime(bar?.max?.toLong() ?: 0)}"
+            }
+            override fun onStartTrackingTouch(bar: SeekBar?) {
+                isDraggingSeekBar = true
+            }
+            override fun onStopTrackingTouch(bar: SeekBar?) {
+                isDraggingSeekBar = false
+                val pos = bar?.progress ?: 0
+                // Отправляем команду перемотки на сервер
+                BluetoothClientService.instance?.sendCommand("${Constants.CMD_SEEK_PREFIX}$pos")
+            }
+        })
     }
 
     override fun onResume() {
@@ -105,6 +147,8 @@ class ClientActivity : AppCompatActivity() {
             addAction(Constants.ACTION_CONNECTION_CHANGED)
             addAction(Constants.ACTION_TRACK_UPDATED)
             addAction(Constants.ACTION_ART_UPDATED)
+            addAction(Constants.ACTION_STATE_UPDATED)
+            addAction(Constants.ACTION_POSITION_UPDATED)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(stateReceiver, filter, RECEIVER_NOT_EXPORTED)
@@ -194,5 +238,14 @@ class ClientActivity : AppCompatActivity() {
         btnNext.isEnabled    = enabled
         btnVolUp.isEnabled   = enabled
         btnVolDown.isEnabled = enabled
+        seekBar.isEnabled    = enabled
+    }
+
+    private fun formatTime(ms: Long): String {
+        if (ms < 0) return "00:00"
+        val totalSecs = ms / 1000
+        val m = totalSecs / 60
+        val s = totalSecs % 60
+        return String.format(Locale.getDefault(), "%02d:%02d", m, s)
     }
 }

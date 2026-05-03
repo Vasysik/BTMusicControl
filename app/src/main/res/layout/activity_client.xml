@@ -10,18 +10,17 @@
         android:orientation="vertical"
         android:gravity="center_horizontal"
         android:padding="24dp">
-
-        <!-- Обложка альбома — побольше, маленький padding внутри карточки -->
+        
         <androidx.cardview.widget.CardView
             xmlns:card_view="http://schemas.android.com/apk/res-auto"
             android:id="@+id/card_art"
-            android:layout_width="280dp"
-            android:layout_height="280dp"
+            android:layout_width="320dp"
+            android:layout_height="320dp"
             card_view:cardCornerRadius="16dp"
             card_view:cardElevation="8dp"
-            card_view:contentPadding="8dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="20dp">
+            card_view:contentPadding="4dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="16dp">
 
             <ImageView
                 android:id="@+id/iv_album_art"
@@ -31,25 +30,44 @@
                 android:src="@android:drawable/ic_media_play"
                 android:background="?android:attr/colorPrimaryDark"
                 android:padding="64dp"/>
-                <!-- Нет android:tint — тинт для заглушки ставим кодом -->
-
         </androidx.cardview.widget.CardView>
 
-        <!-- Название трека -->
         <TextView
             android:id="@+id/tv_track"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text=""
-            android:textSize="15sp"
+            android:textSize="17sp"
             android:textStyle="bold"
             android:textColor="?android:attr/textColorPrimary"
             android:gravity="center"
             android:maxLines="2"
             android:ellipsize="end"
-            android:layout_marginBottom="4dp"/>
+            android:layout_marginBottom="8dp"/>
+        
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="12dp">
 
-        <!-- Статус подключения -->
+            <SeekBar
+                android:id="@+id/seek_bar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:progressTint="?android:attr/colorAccent"
+                android:thumbTint="?android:attr/colorAccent"/>
+
+            <TextView
+                android:id="@+id/tv_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="00:00 / 00:00"
+                android:textSize="12sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:gravity="center"/>
+        </LinearLayout>
+
         <TextView
             android:id="@+id/tv_status"
             android:layout_width="wrap_content"
@@ -57,9 +75,8 @@
             android:text="Нет соединения"
             android:textSize="13sp"
             android:textColor="?android:attr/textColorSecondary"
-            android:layout_marginBottom="20dp"/>
-
-        <!-- Все 5 кнопок в одну строку: Vol- Prev Play Next Vol+ -->
+            android:layout_marginBottom="16dp"/>
+        
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -112,7 +129,6 @@
 
         </LinearLayout>
 
-        <!-- Привязанное устройство -->
         <TextView
             android:id="@+id/tv_saved_device"
             android:layout_width="match_parent"
@@ -121,31 +137,29 @@
             android:textSize="13sp"
             android:textColor="?android:attr/textColorSecondary"
             android:gravity="center"
-            android:layout_marginBottom="12dp"/>
+            android:layout_marginBottom="8dp"/>
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:orientation="vertical"
+            android:gravity="center">
 
             <Button
                 android:id="@+id/btn_connect"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
                 android:text="Выбрать устройство"/>
-
-            <!-- X кнопка "забыть" — квадратная, высота как у кнопки рядом -->
-            <ImageButton
+            
+            <Button
                 android:id="@+id/btn_forget"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:src="@drawable/ic_close"
-                android:tint="@android:color/white"
-                android:backgroundTint="#CC2222"
-                android:background="?attr/selectableItemBackground"
-                android:visibility="gone"
-                android:layout_marginStart="8dp"/>
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Отключиться"
+                android:textColor="@android:color/white"
+                android:backgroundTint="#D32F2F"
+                android:visibility="gone"/>
 
         </LinearLayout>
 

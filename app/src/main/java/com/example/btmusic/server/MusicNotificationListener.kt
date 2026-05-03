@@ -4,7 +4,10 @@ import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Base64
@@ -13,66 +16,103 @@ import java.io.ByteArrayOutputStream
 class MusicNotificationListener : NotificationListenerService() {
 
     private val musicPackages = setOf(
-        "com.spotify.music",
-        "com.google.android.apps.youtube.music",
-        "com.google.android.youtube",
-        "ru.yandex.music",
-        "deezer.android.app",
-        "com.soundcloud.android",
-        "com.apple.android.music",
-        "com.amazon.mp3",
-        "com.vk.vkclient",
-        "com.vkontakte.android"
+        "com.spotify.music", "com.google.android.apps.youtube.music",
+        "com.google.android.youtube", "ru.yandex.music", "deezer.android.app",
+        "com.soundcloud.android", "com.apple.android.music", "com.amazon.mp3",
+        "com.vk.vkclient", "com.vkontakte.android"
     )
 
-    // Чтобы не спамить одинаковой обложкой при каждом обновлении уведомления
-    private var lastCoverHash = 0
+    private var lastCoverHash  = 0
+    private var activeController: MediaController? = null
+
+    // Опрос позиции раз в 500 мс пока воспроизведение идёт
+    private val handler = Handler(Looper.getMainLooper())
+    private val positionRunnable = object : Runnable {
+        override fun run() {
+            val ctrl  = activeController ?: return
+            val state = ctrl.playbackState ?: return
+            val dur   = ctrl.metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+            if (dur > 0) {
+                BluetoothServerService.instance?.sendPosition(state.position, dur)
+            }
+            if (state.state == PlaybackState.STATE_PLAYING) {
+                handler.postDelayed(this, 500)
+            }
+        }
+    }
+
+    private val controllerCallback = object : MediaController.Callback() {
+        override fun onPlaybackStateChanged(state: PlaybackState?) {
+            val playing = state?.state == PlaybackState.STATE_PLAYING
+            BluetoothServerService.instance?.sendPlaybackState(playing)
+            handler.removeCallbacks(positionRunnable)
+            if (playing) handler.post(positionRunnable)
+        }
+        override fun onMetadataChanged(metadata: MediaMetadata?) {
+            metadata ?: return
+            val title  = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)  ?: return
+            val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                ?: metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST) ?: ""
+            val info = if (artist.isNotEmpty()) "$artist — $title" else title
+            BluetoothServerService.instance?.sendTrackInfo(info)
+
+            val art = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+            if (art != null && art.hashCode() != lastCoverHash) {
+                lastCoverHash = art.hashCode()
+                BluetoothServerService.instance?.sendAlbumCover(compressToBase64(art))
+            }
+        }
+    }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName !in musicPackages) return
-
         val extras: Bundle = sbn.notification.extras
 
-        val title  = extras.getString("android.title")?.takeIf { it.isNotBlank() } ?: return
-        val artist = extras.getString("android.text")?.takeIf { it.isNotBlank() } ?: ""
-        val trackInfo = if (artist.isNotEmpty()) "$artist — $title" else title
-
-        BluetoothServerService.instance?.sendTrackInfo(trackInfo)
-
-        // ─── Обложка через MediaSession ───────────────────────────────────────
+        // Fallback: если MediaSession недоступна, достаём из extras уведомления
         @Suppress("DEPRECATION")
         val token = extras.getParcelable<MediaSession.Token>("android.mediaSession")
         if (token != null) {
             try {
-                val meta = MediaController(this, token).metadata ?: return
-                val art = meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-                    ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)
-                    ?: meta.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-
-                if (art != null && art.hashCode() != lastCoverHash) {
-                    lastCoverHash = art.hashCode()
-                    val b64 = compressToBase64(art)
-                    BluetoothServerService.instance?.sendAlbumCover(b64)
+                val ctrl = MediaController(this, token)
+                if (ctrl != activeController) {
+                    activeController?.unregisterCallback(controllerCallback)
+                    activeController = ctrl
+                    ctrl.registerCallback(controllerCallback)
+                    // Сразу обновляем состояние при подключении
+                    controllerCallback.onPlaybackStateChanged(ctrl.playbackState)
+                    controllerCallback.onMetadataChanged(ctrl.metadata)
                 }
-            } catch (_: Exception) { /* MediaSession может быть недоступна */ }
+            } catch (_: Exception) { fallbackFromExtras(extras) }
+        } else {
+            fallbackFromExtras(extras)
         }
+    }
+
+    private fun fallbackFromExtras(extras: Bundle) {
+        val title  = extras.getString("android.title")?.takeIf { it.isNotBlank() } ?: return
+        val artist = extras.getString("android.text")?.takeIf { it.isNotBlank() } ?: ""
+        val info   = if (artist.isNotEmpty()) "$artist — $title" else title
+        BluetoothServerService.instance?.sendTrackInfo(info)
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {}
 
-    /**
-     * Сжимает bitmap до 250×250, JPEG 55% → ~15-30 КБ → base64 ~20-40 КБ.
-     * Отправляется одной строкой через RFCOMM.
-     */
+    override fun onDestroy() {
+        super.onDestroy()
+        handler.removeCallbacks(positionRunnable)
+        activeController?.unregisterCallback(controllerCallback)
+    }
+
     private fun compressToBase64(src: Bitmap): String {
-        val size = 250
+        val size = 300
         val scaled = if (src.width > size || src.height > size) {
             val ratio = size.toFloat() / maxOf(src.width, src.height)
             Bitmap.createScaledBitmap(src, (src.width * ratio).toInt(), (src.height * ratio).toInt(), true)
         } else src
-
         val out = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 55, out)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 60, out)
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 }
