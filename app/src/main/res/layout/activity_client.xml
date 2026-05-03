@@ -11,14 +11,15 @@
         android:gravity="center_horizontal"
         android:padding="24dp">
 
-        <!-- Обложка альбома -->
+        <!-- Обложка альбома — побольше, маленький padding внутри карточки -->
         <androidx.cardview.widget.CardView
             xmlns:card_view="http://schemas.android.com/apk/res-auto"
             android:id="@+id/card_art"
-            android:layout_width="220dp"
-            android:layout_height="220dp"
+            android:layout_width="280dp"
+            android:layout_height="280dp"
             card_view:cardCornerRadius="16dp"
             card_view:cardElevation="8dp"
+            card_view:contentPadding="8dp"
             android:layout_marginTop="16dp"
             android:layout_marginBottom="20dp">
 
@@ -29,9 +30,8 @@
                 android:scaleType="centerCrop"
                 android:src="@android:drawable/ic_media_play"
                 android:background="?android:attr/colorPrimaryDark"
-                android:padding="56dp"/>
-                <!-- Нет android:tint — иначе засвечивает реальную обложку.
-                     Тинт для заглушки ставим кодом в ClientActivity. -->
+                android:padding="64dp"/>
+                <!-- Нет android:tint — тинт для заглушки ставим кодом -->
 
         </androidx.cardview.widget.CardView>
 
@@ -79,7 +79,7 @@
                 android:id="@+id/btn_prev"
                 android:layout_width="60dp"
                 android:layout_height="60dp"
-                android:src="@android:drawable/ic_media_previous"
+                android:src="@drawable/ic_prev"
                 android:background="?selectableItemBackgroundBorderless"
                 android:tint="?android:attr/textColorPrimary"
                 android:layout_marginHorizontal="4dp"/>
@@ -88,7 +88,7 @@
                 android:id="@+id/btn_play"
                 android:layout_width="72dp"
                 android:layout_height="72dp"
-                android:src="@android:drawable/ic_media_play"
+                android:src="@drawable/ic_play_pause"
                 android:background="?selectableItemBackgroundBorderless"
                 android:tint="?android:attr/colorAccent"
                 android:layout_marginHorizontal="4dp"/>
@@ -97,7 +97,7 @@
                 android:id="@+id/btn_next"
                 android:layout_width="60dp"
                 android:layout_height="60dp"
-                android:src="@android:drawable/ic_media_next"
+                android:src="@drawable/ic_next"
                 android:background="?selectableItemBackgroundBorderless"
                 android:tint="?android:attr/textColorPrimary"
                 android:layout_marginHorizontal="4dp"/>
@@ -135,17 +135,17 @@
                 android:layout_height="wrap_content"
                 android:text="Выбрать устройство"/>
 
-            <!-- Крестик-кнопка "забыть" — красная, без текста -->
+            <!-- X кнопка "забыть" — квадратная, высота как у кнопки рядом -->
             <ImageButton
                 android:id="@+id/btn_forget"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:src="@drawable/ic_close"
                 android:tint="@android:color/white"
                 android:backgroundTint="#CC2222"
-                android:background="@drawable/bg_circle_red"
+                android:background="?attr/selectableItemBackground"
                 android:visibility="gone"
-                android:layout_marginStart="12dp"/>
+                android:layout_marginStart="8dp"/>
 
         </LinearLayout>
 
