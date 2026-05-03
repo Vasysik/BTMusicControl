@@ -24,7 +24,7 @@ class ClientActivity : AppCompatActivity() {
     private lateinit var tvSavedDevice: TextView
     private lateinit var ivAlbumArt: ImageView
     private lateinit var btnConnect: Button
-    private lateinit var btnForget: Button
+    private lateinit var btnForget: ImageButton
     private lateinit var btnPrev: ImageButton
     private lateinit var btnPlay: ImageButton
     private lateinit var btnNext: ImageButton
@@ -46,8 +46,8 @@ class ClientActivity : AppCompatActivity() {
                     val bytes = Base64.decode(b64, Base64.NO_WRAP)
                     val bmp   = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
                     ivAlbumArt.setImageBitmap(bmp)
-                    ivAlbumArt.setPadding(0, 0, 0, 0)   // убираем padding-заглушку
-                    ivAlbumArt.clearColorFilter()
+                    ivAlbumArt.setPadding(0, 0, 0, 0)   // убираем padding заглушки
+                    ivAlbumArt.clearColorFilter()         // снимаем серый тинт заглушки
                 }
             }
         }
@@ -75,6 +75,11 @@ class ClientActivity : AppCompatActivity() {
         btnNext       = findViewById(R.id.btn_next)
         btnVolUp      = findViewById(R.id.btn_vol_up)
         btnVolDown    = findViewById(R.id.btn_vol_down)
+
+        // Тинт только для иконки-заглушки (серая нотка на фоне)
+        ivAlbumArt.setColorFilter(
+            androidx.core.content.ContextCompat.getColor(this, android.R.color.darker_gray)
+        )
 
         btnConnect.setOnClickListener { requestBtPermsAndPick() }
         btnForget.setOnClickListener {

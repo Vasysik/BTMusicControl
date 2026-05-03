@@ -245,11 +245,11 @@ class BluetoothClientService : Service() {
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(tapIntent)
             .setOngoing(true)
-            .addAction(action(android.R.drawable.ic_lock_silent_mode,   "Vol-", volDnIntent))
+            .addAction(action(R.drawable.ic_vol_down,   "Vol-", volDnIntent))
             .addAction(action(android.R.drawable.ic_media_previous, "Пред", prevIntent))
             .addAction(action(android.R.drawable.ic_media_play,    "Play", playIntent))
             .addAction(action(android.R.drawable.ic_media_next,     "След", nextIntent))
-            .addAction(action(android.R.drawable.ic_media_ff,     "Vol+", volUpIntent))
+            .addAction(action(R.drawable.ic_vol_up,     "Vol+", volUpIntent))
             .setStyle(Notification.MediaStyle().setShowActionsInCompactView(1, 2, 3))
 
         // Обложка в уведомлении если есть

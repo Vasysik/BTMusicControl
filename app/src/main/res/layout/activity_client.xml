@@ -29,8 +29,9 @@
                 android:scaleType="centerCrop"
                 android:src="@android:drawable/ic_media_play"
                 android:background="?android:attr/colorPrimaryDark"
-                android:padding="48dp"
-                android:tint="?android:attr/textColorSecondary"/>
+                android:padding="56dp"/>
+                <!-- Нет android:tint — иначе засвечивает реальную обложку.
+                     Тинт для заглушки ставим кодом в ClientActivity. -->
 
         </androidx.cardview.widget.CardView>
 
@@ -58,108 +59,93 @@
             android:textColor="?android:attr/textColorSecondary"
             android:layout_marginBottom="20dp"/>
 
-        <!-- Кнопки воспроизведения -->
+        <!-- Все 5 кнопок в одну строку: Vol- Prev Play Next Vol+ -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginBottom="16dp">
-
-            <ImageButton
-                android:id="@+id/btn_prev"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:src="@android:drawable/ic_media_previous"
-                android:background="?selectableItemBackgroundBorderless"
-                android:tint="?android:attr/textColorPrimary"/>
-
-            <ImageButton
-                android:id="@+id/btn_play"
-                android:layout_width="80dp"
-                android:layout_height="80dp"
-                android:src="@android:drawable/ic_media_play"
-                android:background="?selectableItemBackgroundBorderless"
-                android:tint="?android:attr/colorAccent"
-                android:layout_marginHorizontal="16dp"/>
-
-            <ImageButton
-                android:id="@+id/btn_next"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
-                android:src="@android:drawable/ic_media_next"
-                android:background="?selectableItemBackgroundBorderless"
-                android:tint="?android:attr/textColorPrimary"/>
-
-        </LinearLayout>
-
-        <!-- Громкость -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
+            android:gravity="center_vertical"
             android:layout_marginBottom="28dp">
 
             <ImageButton
                 android:id="@+id/btn_vol_down"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:src="@android:drawable/ic_lock_silent_mode"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_vol_down"
                 android:background="?selectableItemBackgroundBorderless"
-                android:tint="?android:attr/textColorSecondary"
-                android:layout_marginEnd="24dp"/>
+                android:tint="?android:attr/textColorSecondary"/>
+
+            <ImageButton
+                android:id="@+id/btn_prev"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:src="@android:drawable/ic_media_previous"
+                android:background="?selectableItemBackgroundBorderless"
+                android:tint="?android:attr/textColorPrimary"
+                android:layout_marginHorizontal="4dp"/>
+
+            <ImageButton
+                android:id="@+id/btn_play"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:src="@android:drawable/ic_media_play"
+                android:background="?selectableItemBackgroundBorderless"
+                android:tint="?android:attr/colorAccent"
+                android:layout_marginHorizontal="4dp"/>
+
+            <ImageButton
+                android:id="@+id/btn_next"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:src="@android:drawable/ic_media_next"
+                android:background="?selectableItemBackgroundBorderless"
+                android:tint="?android:attr/textColorPrimary"
+                android:layout_marginHorizontal="4dp"/>
 
             <ImageButton
                 android:id="@+id/btn_vol_up"
-                android:layout_width="56dp"
-                android:layout_height="56dp"
-                android:src="@android:drawable/ic_media_ff"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_vol_up"
                 android:background="?selectableItemBackgroundBorderless"
                 android:tint="?android:attr/textColorSecondary"/>
 
         </LinearLayout>
 
-        <!-- Устройство -->
-        <LinearLayout
+        <!-- Привязанное устройство -->
+        <TextView
+            android:id="@+id/tv_saved_device"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
+            android:text="Устройство не привязано"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary"
             android:gravity="center"
-            android:layout_marginBottom="8dp">
-
-            <TextView
-                android:id="@+id/tv_saved_device"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Устройство не привязано"
-                android:textSize="13sp"
-                android:textColor="?android:attr/textColorSecondary"
-                android:gravity="center"/>
-
-        </LinearLayout>
+            android:layout_marginBottom="12dp"/>
 
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center">
+            android:gravity="center_vertical">
 
             <Button
                 android:id="@+id/btn_connect"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Выбрать устройство"
-                android:layout_marginEnd="8dp"/>
+                android:text="Выбрать устройство"/>
 
-            <Button
+            <!-- Крестик-кнопка "забыть" — красная, без текста -->
+            <ImageButton
                 android:id="@+id/btn_forget"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Забыть"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_close"
+                android:tint="@android:color/white"
+                android:backgroundTint="#CC2222"
+                android:background="@drawable/bg_circle_red"
                 android:visibility="gone"
-                style="@style/Widget.AppCompat.Button.Borderless"/>
+                android:layout_marginStart="12dp"/>
 
         </LinearLayout>
 
