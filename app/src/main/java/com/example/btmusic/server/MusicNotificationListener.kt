@@ -15,14 +15,7 @@ import java.io.ByteArrayOutputStream
 
 class MusicNotificationListener : NotificationListenerService() {
 
-    private val musicPackages = setOf(
-        "com.spotify.music", "com.google.android.apps.youtube.music",
-        "com.google.android.youtube", "ru.yandex.music", "deezer.android.app",
-        "com.soundcloud.android", "com.apple.android.music", "com.amazon.mp3",
-        "com.vk.vkclient", "com.vkontakte.android"
-    )
-
-    private var lastCoverHash  = 0
+    private var lastCoverHash = 0
     private var activeController: MediaController? = null
 
     private val handler = Handler(Looper.getMainLooper())
@@ -58,6 +51,7 @@ class MusicNotificationListener : NotificationListenerService() {
             val art = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
                 ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
                 ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
+            
             if (art != null && art.hashCode() != lastCoverHash) {
                 lastCoverHash = art.hashCode()
                 BluetoothServerService.instance?.sendAlbumCover(compressToBase64(art))
@@ -66,15 +60,15 @@ class MusicNotificationListener : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (sbn.packageName !in musicPackages) return
         val extras: Bundle = sbn.notification.extras
 
         @Suppress("DEPRECATION")
         val token = extras.getParcelable<MediaSession.Token>("android.mediaSession")
+        
         if (token != null) {
             try {
                 val ctrl = MediaController(this, token)
-                if (ctrl != activeController) {
+                if (ctrl.packageName != activeController?.packageName) {
                     activeController?.unregisterCallback(controllerCallback)
                     activeController = ctrl
                     ctrl.registerCallback(controllerCallback)
@@ -82,9 +76,9 @@ class MusicNotificationListener : NotificationListenerService() {
                     controllerCallback.onPlaybackStateChanged(ctrl.playbackState)
                     controllerCallback.onMetadataChanged(ctrl.metadata)
                 }
-            } catch (_: Exception) { fallbackFromExtras(extras) }
-        } else {
-            fallbackFromExtras(extras)
+            } catch (_: Exception) { 
+                fallbackFromExtras(extras) 
+            }
         }
     }
 
@@ -95,7 +89,9 @@ class MusicNotificationListener : NotificationListenerService() {
         BluetoothServerService.instance?.sendTrackInfo(info)
     }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification) {}
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        // TODO
+    }
 
     override fun onDestroy() {
         super.onDestroy()
