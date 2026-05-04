@@ -104,16 +104,28 @@ class BluetoothServerService : Service() {
 
     private fun dispatchCommand(cmd: String) {
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
-        val ctrl = activeMediaController  // Берём контроллер из MusicNotificationListener
+        val ctrl = activeMediaController
+        
+        val isControllerValid = ctrl != null && try {
+            ctrl.playbackState
+            true
+        } catch (_: Exception) {
+            false
+        }
         
         when {
             cmd == Constants.CMD_PLAY -> {
-                if (ctrl != null) {
-                    val state = ctrl.playbackState?.state
-                    if (state == PlaybackState.STATE_PLAYING) {
-                        ctrl.transportControls.pause()
-                    } else {
-                        ctrl.transportControls.play()
+                if (isControllerValid && ctrl != null) {
+                    try {
+                        val state = ctrl.playbackState?.state
+                        if (state == PlaybackState.STATE_PLAYING) {
+                            ctrl.transportControls.pause()
+                        } else {
+                            ctrl.transportControls.play()
+                        }
+                    } catch (e: Exception) {
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
                     }
                 } else {
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
@@ -122,14 +134,28 @@ class BluetoothServerService : Service() {
             }
             
             cmd == Constants.CMD_NEXT -> {
-                ctrl?.transportControls?.skipToNext() ?: run {
+                if (isControllerValid && ctrl != null) {
+                    try {
+                        ctrl.transportControls.skipToNext()
+                    } catch (e: Exception) {
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_NEXT))
+                    }
+                } else {
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_NEXT))
                 }
             }
             
             cmd == Constants.CMD_PREV -> {
-                ctrl?.transportControls?.skipToPrevious() ?: run {
+                if (isControllerValid && ctrl != null) {
+                    try {
+                        ctrl.transportControls.skipToPrevious()
+                    } catch (e: Exception) {
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
+                        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PREVIOUS))
+                    }
+                } else {
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
                     am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PREVIOUS))
                 }
@@ -139,8 +165,14 @@ class BluetoothServerService : Service() {
             cmd == Constants.CMD_VOL_DOWN -> am.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
             
             cmd.startsWith(Constants.CMD_SEEK_PREFIX) -> {
-                val posMs = cmd.removePrefix(Constants.CMD_SEEK_PREFIX).toLongOrNull() ?: return
-                ctrl?.transportControls?.seekTo(posMs)
+                if (isControllerValid && ctrl != null) {
+                    val posMs = cmd.removePrefix(Constants.CMD_SEEK_PREFIX).toLongOrNull() ?: return
+                    try {
+                        ctrl.transportControls.seekTo(posMs)
+                    } catch (_: Exception) {
+                        // IGNORE
+                    }
+                }
             }
         }
     }
