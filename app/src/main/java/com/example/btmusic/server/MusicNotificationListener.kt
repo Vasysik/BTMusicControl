@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream
 class MusicNotificationListener : NotificationListenerService() {
 
     private var lastCoverHash = 0
+    private var lastTrackId: String? = null
     private var activeController: MediaController? = null
     private var sessionManager: MediaSessionManager? = null
 
@@ -42,11 +43,18 @@ class MusicNotificationListener : NotificationListenerService() {
             handler.removeCallbacks(positionRunnable)
             if (playing) handler.post(positionRunnable)
         }
+        
         override fun onMetadataChanged(metadata: MediaMetadata?) {
             metadata ?: return
-            val title  = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)  ?: return
+            
+            val title  = metadata.getString(MediaMetadata.METADATA_KEY_TITLE) ?: return
             val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)
                 ?: metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST) ?: ""
+            
+            val trackId = "${artist}_${title}"
+            val isNewTrack = trackId != lastTrackId
+            lastTrackId = trackId
+            
             val info = if (artist.isNotEmpty()) "$artist — $title" else title
             BluetoothServerService.instance?.sendTrackInfo(info)
 
@@ -54,15 +62,20 @@ class MusicNotificationListener : NotificationListenerService() {
                 ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_ART)
                 ?: metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
             
-            if (art != null && art.hashCode() != lastCoverHash) {
-                lastCoverHash = art.hashCode()
-                BluetoothServerService.instance?.sendAlbumCover(compressToBase64(art))
+            if (art != null) {
+                val hash = art.hashCode()
+                if (hash != lastCoverHash) {
+                    lastCoverHash = hash
+                    BluetoothServerService.instance?.sendAlbumCover(compressToBase64(art))
+                }
+            } else if (isNewTrack) {
+                lastCoverHash = 0
+                BluetoothServerService.instance?.sendAlbumCover("")  // Пустая строка = сброс
             }
         }
     }
 
     private val sessionsChangedListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-        // Ищем активный плеер (playing или paused, но не stopped)
         val playing = controllers?.firstOrNull { 
             it.playbackState?.state == PlaybackState.STATE_PLAYING 
         }
@@ -80,24 +93,15 @@ class MusicNotificationListener : NotificationListenerService() {
         super.onListenerConnected()
         sessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         
-        // Регистрируем слушатель смены активных сессий
         try {
             val component = ComponentName(this, this::class.java)
             sessionManager?.addOnActiveSessionsChangedListener(sessionsChangedListener, component)
-            
-            // Сразу получаем текущие активные сессии
             val sessions = sessionManager?.getActiveSessions(component) ?: emptyList()
             sessionsChangedListener.onActiveSessionsChanged(sessions)
-        } catch (e: SecurityException) {
-            // Нет доступа — пользователь отозвал разрешение
-        }
+        } catch (e: SecurityException) {}
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Оставляем для совместимости со старыми Android
-        // На Android 8-9 OnActiveSessionsChangedListener может не срабатывать
-    }
-
+    override fun onNotificationPosted(sbn: StatusBarNotification) {}
     override fun onNotificationRemoved(sbn: StatusBarNotification) {}
 
     override fun onDestroy() {
@@ -114,7 +118,9 @@ class MusicNotificationListener : NotificationListenerService() {
         ctrl.registerCallback(controllerCallback)
         BluetoothServerService.instance?.activeMediaController = ctrl
         
-        // Отправляем данные сразу
+        lastTrackId = null
+        lastCoverHash = 0
+        
         controllerCallback.onPlaybackStateChanged(ctrl.playbackState)
         controllerCallback.onMetadataChanged(ctrl.metadata)
     }

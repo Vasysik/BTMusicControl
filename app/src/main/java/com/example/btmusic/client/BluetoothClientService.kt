@@ -142,13 +142,19 @@ class BluetoothClientService : Service() {
                         broadcastTrack(info)
                     }
                     line.startsWith(Constants.CMD_ART_PREFIX) -> {
-                        val b64   = line.removePrefix(Constants.CMD_ART_PREFIX)
-                        val bytes = Base64.decode(b64, Base64.NO_WRAP)
-                        val bmp   = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        if (bmp != null) {
-                            currentArtBitmap = bmp
+                        val b64 = line.removePrefix(Constants.CMD_ART_PREFIX)
+                        if (b64.isEmpty()) {
+                            currentArtBitmap = null
                             updateNotification(currentTrack.ifEmpty { "BT Music Remote" })
-                            broadcastArt(b64)
+                            broadcastArt("")
+                        } else {
+                            val bytes = Base64.decode(b64, Base64.NO_WRAP)
+                            val bmp   = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                            if (bmp != null) {
+                                currentArtBitmap = bmp
+                                updateNotification(currentTrack.ifEmpty { "BT Music Remote" })
+                                broadcastArt(b64)
+                            }
                         }
                     }
                     line.startsWith(Constants.CMD_STATE_PREFIX) -> {

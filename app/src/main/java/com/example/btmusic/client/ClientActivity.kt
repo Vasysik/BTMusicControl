@@ -50,11 +50,19 @@ class ClientActivity : AppCompatActivity() {
                     tvTrack.text = intent.getStringExtra(Constants.EXTRA_TRACK_INFO) ?: ""
                 Constants.ACTION_ART_UPDATED -> {
                     val b64 = intent.getStringExtra(Constants.EXTRA_ART_BASE64) ?: return
-                    val bytes = Base64.decode(b64, Base64.NO_WRAP)
-                    val bmp   = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
-                    ivAlbumArt.setImageBitmap(bmp)
-                    ivAlbumArt.setPadding(0, 0, 0, 0)
-                    ivAlbumArt.clearColorFilter()
+                    if (b64.isEmpty()) {
+                        ivAlbumArt.setImageResource(android.R.drawable.ic_media_play)
+                        ivAlbumArt.setPadding(80, 80, 80, 80)
+                        ivAlbumArt.setColorFilter(
+                            ContextCompat.getColor(this@ClientActivity, android.R.color.darker_gray)  // ← ТУТ ИСПРАВЛЕНИЕ
+                        )
+                    } else {
+                        val bytes = Base64.decode(b64, Base64.NO_WRAP)
+                        val bmp   = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
+                        ivAlbumArt.setImageBitmap(bmp)
+                        ivAlbumArt.setPadding(0, 0, 0, 0)
+                        ivAlbumArt.clearColorFilter()
+                    }
                 }
                 Constants.ACTION_STATE_UPDATED -> {
                     val isPlaying = intent.getBooleanExtra(Constants.EXTRA_IS_PLAYING, false)

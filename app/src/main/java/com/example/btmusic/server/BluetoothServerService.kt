@@ -7,6 +7,7 @@ import android.graphics.drawable.Icon
 import android.media.AudioManager
 import android.media.session.MediaController
 import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.*
 import android.view.KeyEvent
 import com.example.btmusic.R
@@ -103,28 +104,43 @@ class BluetoothServerService : Service() {
 
     private fun dispatchCommand(cmd: String) {
         val am = getSystemService(AUDIO_SERVICE) as AudioManager
+        val ctrl = activeMediaController  // Берём контроллер из MusicNotificationListener
+        
         when {
             cmd == Constants.CMD_PLAY -> {
-                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+                if (ctrl != null) {
+                    val state = ctrl.playbackState?.state
+                    if (state == PlaybackState.STATE_PLAYING) {
+                        ctrl.transportControls.pause()
+                    } else {
+                        ctrl.transportControls.play()
+                    }
+                } else {
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
+                }
             }
+            
             cmd == Constants.CMD_NEXT -> {
-                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
-                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_NEXT))
+                ctrl?.transportControls?.skipToNext() ?: run {
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_NEXT))
+                }
             }
+            
             cmd == Constants.CMD_PREV -> {
-                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-                am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PREVIOUS))
+                ctrl?.transportControls?.skipToPrevious() ?: run {
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
+                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_MEDIA_PREVIOUS))
+                }
             }
+            
             cmd == Constants.CMD_VOL_UP   -> am.adjustVolume(AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI)
             cmd == Constants.CMD_VOL_DOWN -> am.adjustVolume(AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI)
+            
             cmd.startsWith(Constants.CMD_SEEK_PREFIX) -> {
                 val posMs = cmd.removePrefix(Constants.CMD_SEEK_PREFIX).toLongOrNull() ?: return
-                activeMediaController?.transportControls?.seekTo(posMs)
-                    ?: run {
-                        // Fallback: нет MediaController → шлём KEYCODE с задержкой невозможен,
-                        // но хотя бы попробуем через AudioManager (не работает для seek, просто игнорируем)
-                    }
+                ctrl?.transportControls?.seekTo(posMs)
             }
         }
     }
