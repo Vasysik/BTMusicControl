@@ -1,11 +1,12 @@
 package com.example.btmusic.server
 
+import android.content.ComponentName
+import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
-import android.media.session.MediaSession
+import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.service.notification.NotificationListenerService
@@ -17,6 +18,7 @@ class MusicNotificationListener : NotificationListenerService() {
 
     private var lastCoverHash = 0
     private var activeController: MediaController? = null
+    private var sessionManager: MediaSessionManager? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private val positionRunnable = object : Runnable {
@@ -59,45 +61,62 @@ class MusicNotificationListener : NotificationListenerService() {
         }
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val extras: Bundle = sbn.notification.extras
+    private val sessionsChangedListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+        // Ищем активный плеер (playing или paused, но не stopped)
+        val playing = controllers?.firstOrNull { 
+            it.playbackState?.state == PlaybackState.STATE_PLAYING 
+        }
+        val candidate = playing ?: controllers?.firstOrNull {
+            val state = it.playbackState?.state
+            state == PlaybackState.STATE_PAUSED || state == PlaybackState.STATE_BUFFERING
+        }
 
-        @Suppress("DEPRECATION")
-        val token = extras.getParcelable<MediaSession.Token>("android.mediaSession")
-        
-        if (token != null) {
-            try {
-                val ctrl = MediaController(this, token)
-                if (ctrl.packageName != activeController?.packageName) {
-                    activeController?.unregisterCallback(controllerCallback)
-                    activeController = ctrl
-                    ctrl.registerCallback(controllerCallback)
-                    BluetoothServerService.instance?.activeMediaController = ctrl
-                    controllerCallback.onPlaybackStateChanged(ctrl.playbackState)
-                    controllerCallback.onMetadataChanged(ctrl.metadata)
-                }
-            } catch (_: Exception) { 
-                fallbackFromExtras(extras) 
-            }
+        if (candidate != null && candidate != activeController) {
+            switchToController(candidate)
         }
     }
 
-    private fun fallbackFromExtras(extras: Bundle) {
-        val title  = extras.getString("android.title")?.takeIf { it.isNotBlank() } ?: return
-        val artist = extras.getString("android.text")?.takeIf { it.isNotBlank() } ?: ""
-        val info   = if (artist.isNotEmpty()) "$artist — $title" else title
-        BluetoothServerService.instance?.sendTrackInfo(info)
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        sessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+        
+        // Регистрируем слушатель смены активных сессий
+        try {
+            val component = ComponentName(this, this::class.java)
+            sessionManager?.addOnActiveSessionsChangedListener(sessionsChangedListener, component)
+            
+            // Сразу получаем текущие активные сессии
+            val sessions = sessionManager?.getActiveSessions(component) ?: emptyList()
+            sessionsChangedListener.onActiveSessionsChanged(sessions)
+        } catch (e: SecurityException) {
+            // Нет доступа — пользователь отозвал разрешение
+        }
     }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        // TODO
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        // Оставляем для совместимости со старыми Android
+        // На Android 8-9 OnActiveSessionsChangedListener может не срабатывать
     }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {}
 
     override fun onDestroy() {
         super.onDestroy()
         handler.removeCallbacks(positionRunnable)
         activeController?.unregisterCallback(controllerCallback)
+        sessionManager?.removeOnActiveSessionsChangedListener(sessionsChangedListener)
         BluetoothServerService.instance?.activeMediaController = null
+    }
+
+    private fun switchToController(ctrl: MediaController) {
+        activeController?.unregisterCallback(controllerCallback)
+        activeController = ctrl
+        ctrl.registerCallback(controllerCallback)
+        BluetoothServerService.instance?.activeMediaController = ctrl
+        
+        // Отправляем данные сразу
+        controllerCallback.onPlaybackStateChanged(ctrl.playbackState)
+        controllerCallback.onMetadataChanged(ctrl.metadata)
     }
 
     private fun compressToBase64(src: Bitmap): String {

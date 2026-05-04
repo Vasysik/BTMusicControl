@@ -75,6 +75,22 @@ class ServerActivity : AppCompatActivity() {
             btnToggle.text = "Остановить сервер"
             applyState(svc.isClientConnected, svc.connectedClientName)
         }
+
+        checkNotificationAccess()
+    }
+
+    private fun checkNotificationAccess() {
+        val enabled = android.provider.Settings.Secure.getString(
+            contentResolver, "enabled_notification_listeners"
+        )?.contains(packageName) == true
+
+        if (!enabled && serviceRunning) {
+            Toast.makeText(
+                this, 
+                "⚠️ Включи доступ к уведомлениям для отображения треков", 
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 
     override fun onPause() {
